@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.csv
+evidencias/
+docker-compose.override.yml
+.DS_Store

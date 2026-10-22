@@ -1,0 +1,74 @@
+name: hadb
+
+services:
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.17
+    container_name: etcd
+    restart: unless-stopped
+    command:
+      - /usr/local/bin/etcd
+      - --name=${NODE_NAME}
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://${NODE_IP}:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://${NODE_IP}:2380
+      - --initial-cluster=n1=http://${N1_IP}:2380,n2=http://${N2_IP}:2380,n3=http://${N3_IP}:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=hadb-etcd
+      - --heartbeat-interval=250
+      - --election-timeout=2500
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd-data:/etcd-data
+
+  patroni:
+    build: ./patroni
+    image: hadb/patroni:16
+    container_name: patroni
+    restart: unless-stopped
+    init: true
+    depends_on:
+      - etcd
+    stop_grace_period: 60s
+    shm_size: 256mb
+    environment:
+      PATRONI_NAME: ${NODE_NAME}
+      PATRONI_SCOPE: hadb
+      PATRONI_ETCD3_HOSTS: "${N1_IP}:2379,${N2_IP}:2379,${N3_IP}:2379"
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: ${NODE_IP}:8008
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: ${NODE_IP}:5432
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: ${PG_SUPERUSER_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD}
+      PATRONI_REWIND_USERNAME: rewind_user
+      PATRONI_REWIND_PASSWORD: ${PG_REWIND_PASSWORD}
+    ports:
+      - "5432:5432"
+      - "8008:8008"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  haproxy:
+    image: haproxy:3.0
+    container_name: haproxy
+    restart: unless-stopped
+    environment:
+      N1_IP: ${N1_IP}
+      N2_IP: ${N2_IP}
+      N3_IP: ${N3_IP}
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+      - "7000:7000"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
+volumes:
+  etcd-data:
+  pg-data:
