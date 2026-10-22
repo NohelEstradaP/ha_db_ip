@@ -27,6 +27,9 @@ macOS (Apple Silicon) + 2 × Pop!_OS · Octubre 2026
 18. [Comandos de referencia rápida](#18-comandos-de-referencia-rápida)
 19. [Preguntas probables del catedrático](#19-preguntas-probables-del-catedrático)
 20. [Cronograma sugerido y checklist final](#20-cronograma-sugerido-y-checklist-final)
+21. [Laboratorio local: los 3 nodos en una sola máquina](#21-laboratorio-local-los-3-nodos-en-una-sola-máquina)
+
+> **Atajo:** el repositorio `github.com/NohelEstradaP/ha_db_ip` ya trae todos los archivos de este plan, un instalador (`instalar.sh`) que hace las fases 0 a 3 en cada equipo y scripts para las fases 4 a 7. Ver [§8.1](#81-uso-de-github-para-distribuir-la-configuración). Los pasos manuales del plan sirven como referencia y para explicar qué hace cada script.
 
 ---
 
@@ -36,7 +39,7 @@ macOS (Apple Silicon) + 2 × Pop!_OS · Octubre 2026
 |---|---------------|----------------|
 | R1 | La BD recibe **al menos 90 cambios por minuto** | Un generador en cada nodo hace 1 transacción/segundo. Cada transacción tiene 3 cambios (1 `INSERT` + 2 `UPDATE`). Con los 3 nodos: 180 transacciones y 540 cambios por minuto. Con un nodo caído siguen 120 transacciones y 360 cambios por minuto, siempre más de 90. |
 | R2 | Acceso desde **dos o más equipos**, siempre con algún **mirror** | 3 nodos PostgreSQL: 1 primario y 2 réplicas en *streaming replication*. Una réplica es **síncrona**, así que cada `COMMIT` confirmado ya existe en al menos 2 máquinas. Se puede leer y escribir desde cualquiera de los 3 equipos. |
-| R3 | En algún momento **uno de los equipos se apagará** (cualquiera, sin aviso) | Patroni y etcd detectan la caída. Si cae una réplica, no pasa nada visible. Si cae el primario, se elige una réplica nueva como primario en unos 10 a 25 s, sin intervención manual. |
+| R3 | En algún momento **uno de los equipos se apagará** (cualquiera, sin aviso) | Patroni y etcd detectan la caída. Si cae una réplica, no pasa nada visible. Si cae el primario, se elige una réplica nueva como primario en unos 20 a 30 s, sin intervención manual. |
 | R4 | La **integridad y la funcionalidad continúan** con un equipo desconectado | Con replicación síncrona no se pierde ninguna transacción confirmada (RPO = 0). El quórum de etcd (2 de 3) evita el *split-brain*. Los reintentos de la aplicación son idempotentes, así que no hay duplicados. Un verificador comprueba invariantes: la suma de saldos se mantiene y no faltan secuencias. |
 | R5 | Al **restablecer la comunicación se vuelve a sincronizar** | El nodo que regresa arranca como réplica. Si era el primario viejo, Patroni le aplica `pg_rewind` y lo pone a seguir al primario nuevo. Si no, recupera el WAL atrasado. Todo es automático. |
 
@@ -128,7 +131,7 @@ t≈22s   libpq/HAProxy encuentran el nuevo primario. Los generadores reintentan
 5. **`pg_rewind` y `data-checksums`.** Permiten que el primario viejo vuelva como réplica sin copiar toda la BD de nuevo. Los *checksums* detectan corrupción de páginas.
 6. **Tailscale como red por defecto.** Cada máquina recibe una IP fija `100.x.y.z` que funciona igual en la misma LAN (conexión directa) y en redes distintas. etcd y Patroni guardan direcciones IP, y cambiarlas después obliga a reconstruir etcd ([§6.4](#64-procedimiento-si-cambian-las-ip-solo-modo-lan)). Con Tailscale ese problema no existe.
 7. **Aplicación idempotente.** Cada transacción lleva la llave única `(generador, seq)`. Si la conexión se cae durante el `COMMIT` no se sabe si se guardó. Se reintenta la misma `seq` y `ON CONFLICT DO NOTHING` impide duplicarla. Así se tienen "exactamente una vez" y ningún hueco.
-8. **Tiempos de Patroni ajustados** (`ttl: 20`, `loop_wait: 5`, `retry_timeout: 5`). El failover baja de unos 30 s (valores por defecto) a 10–20 s. Se cumple la regla `loop_wait + 2 × retry_timeout ≤ ttl` (5 + 10 = 15 ≤ 20).
+8. **Tiempos de Patroni ajustados** (`ttl: 20`, `loop_wait: 5`, `retry_timeout: 5`). El failover baja de unos 40 s (valores por defecto) a 20–30 s. Se cumple la regla `loop_wait + 2 × retry_timeout ≤ ttl` (5 + 10 = 15 ≤ 20).
 9. **Tiempos de etcd para WAN** (`heartbeat 250 ms`, `election 2500 ms`). Toleran la latencia de Tailscale entre redes distintas sin elecciones falsas.
 
 ---
@@ -407,6 +410,42 @@ Repetir con n2 y n3 como servidor. Las 9 combinaciones deben decir `open`. Corta
 
 El mismo repositorio se clona en las 3 máquinas. Así cualquier cambio se hace una vez y se sincroniza con `git pull`.
 
+#### Instalación automática (recomendada)
+
+El repositorio ya contiene todos los archivos de las secciones 8.3 a 8.14. En **cada** equipo:
+
+```bash
+git clone https://github.com/NohelEstradaP/ha_db_ip.git ~/hadb
+cd ~/hadb
+./instalar.sh            # modo Tailscale;  ./instalar.sh --lan  para solo red local
+```
+
+`instalar.sh` funciona en macOS y en Pop!_OS, y se puede volver a correr. Hace lo siguiente:
+
+| Paso | Qué hace | Sección manual equivalente |
+|------|----------|----------------------------|
+| Paquetes | git, jq, Python, curl (Homebrew o apt) | §5.1, §5.2 |
+| Docker | Docker Desktop (Mac) o Docker Engine desde el repo oficial (Pop!_OS), arranque automático y grupo `docker` | §7 |
+| Tailscale | Instala, pide iniciar sesión y espera la IP `100.x` | §6.1 |
+| Energía y hora | Desactiva la suspensión y activa NTP | §5 |
+| Puertos | Avisa si 2379, 2380, 5432, 5000, 5001, 7000 u 8008 están ocupados | §5.4 |
+| `.env` | Pregunta nodo (`n1`/`n2`/`n3`) e IP de los 3. En el **primer** equipo genera las 4 contraseñas y las muestra; en los otros dos se pegan | §8.4 |
+| Firewall | Si `ufw` está activo, permite el tráfico desde las IP de los 3 nodos | §5.2 |
+| Python e imágenes | Crea `.venv`, instala `psycopg`, construye la imagen de Patroni y descarga etcd y HAProxy | §9.1, §13.1 |
+
+Después, los scripts de `scripts/` cubren el resto:
+
+| Script | Uso | Sección |
+|--------|-----|---------|
+| `./scripts/probar_puertos.sh` | Conectividad entre los 3 nodos | §7.3 |
+| `./scripts/iniciar.sh` | Levanta el nodo, espera el quórum de etcd y el primario (en los 3) | §9, §10, §11 |
+| `./scripts/crear_bd.sh` | Usuario `app`, base `hadb` y esquema (una vez, en cualquiera) | §12 |
+| `./scripts/estado.sh` | Patroni, etcd y quién es primario | §18 |
+| `./scripts/pctl.sh <args>` | `patronictl` (list, history, switchover, reinit…) | §18 |
+| `source scripts/env_app.sh` | Prepara la terminal para `app/*.py` | §13.2 |
+
+#### Repositorio propio (si se parte de cero)
+
 ```bash
 # En la máquina donde se crean los archivos (por ejemplo la Mac):
 mkdir -p ~/hadb && cd ~/hadb
@@ -453,6 +492,7 @@ hadb/
 __pycache__/
 *.csv
 evidencias/
+docker-compose.override.yml
 ```
 
 ### 8.4 `.env.example` (copiar a `.env` en cada nodo y editar)
@@ -1106,7 +1146,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # Prueba desde ESTE nodo que los puertos del clúster respondan en los 3 nodos.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 set -a; source .env; set +a
 
 for ip in "$N1_IP" "$N2_IP" "$N3_IP"; do
@@ -1372,8 +1412,8 @@ Para no repetirlo, guardar las líneas en `scripts/env_app.sh` (sin contraseñas
 |----|-----------|-----------------|--------------------|--------------|
 | P1 | Réplica apagada limpiamente | En una réplica: `sudo shutdown -h now` (Linux) o *Apagar* (Mac) | El primario sigue. Si era la síncrona, Patroni promueve la otra réplica a síncrona. Los generadores no se interrumpen. | 0 s (puede haber un *stall* de 1–5 s si era la síncrona) |
 | P2 | Réplica apagada de golpe | Mantener presionado el botón de encendido, o desconectar la corriente en un equipo sin batería | Igual que P1. | 0–10 s |
-| P3 | **Primario apagado de golpe** | Botón de encendido del primario | Failover automático: la réplica síncrona pasa a Leader y la otra se convierte en Sync Standby. Los generadores sobrevivientes reintentan y continúan. | 10–25 s |
-| P4 | **Primario sin red (partición)** | Desconectar WiFi/cable del primario, o `sudo tailscale down` en él | El aislado pierde el quórum de etcd y se **degrada solo** a réplica de solo lectura. Los otros dos eligen un primario nuevo. No hay *split-brain*. Al reconectar, el viejo hace `pg_rewind` y sigue al nuevo. | 10–25 s |
+| P3 | **Primario apagado de golpe** | Botón de encendido del primario | Failover automático: la réplica síncrona pasa a Leader y la otra se convierte en Sync Standby. Los generadores sobrevivientes reintentan y continúan. | 20–30 s (laboratorio: 22 s) |
+| P4 | **Primario sin red (partición)** | Desconectar WiFi/cable del primario, o `sudo tailscale down` en él | El aislado pierde el quórum de etcd y se **degrada solo** a réplica de solo lectura. Los otros dos eligen un primario nuevo. No hay *split-brain*. Al reconectar, el viejo hace `pg_rewind` y sigue al nuevo. | 20–30 s (laboratorio: 27 s) |
 | P5 | Réplica sin red | Desconectar la red de una réplica | Como P1. Al reconectar recupera el WAL atrasado. | 0–5 s |
 | P6 | Reinicio completo de un nodo | `sudo reboot` | Al arrancar, Docker levanta los contenedores y el nodo vuelve como réplica **sin intervención**. | Depende del arranque del SO |
 | P7 | Desconexión prolongada | Nodo apagado de 30 a 60 min con carga | Al volver, sincroniza con el WAL retenido. Si no le alcanzara, Patroni hace `reinit` (copia completa). | n/a |
@@ -1571,7 +1611,7 @@ En las 3: `docker compose down -v`. Luego repetir desde [§9.2](#92-arrancar-etc
 4. **¿Y si la conexión se cae justo en el `COMMIT`?** El cliente no sabe si se guardó. Reintenta con la misma llave `(generador, seq)` y `ON CONFLICT DO NOTHING` evita el duplicado. Se ve como `duplicado` en el log.
 5. **¿Cómo se re-sincroniza el nodo que vuelve?** Si era réplica, pide el WAL que le falta desde su última posición. Si era primario, `pg_rewind` descarta lo que escribió y nunca se replicó, y luego sigue al primario nuevo. Si falta WAL, se hace `reinit` con `pg_basebackup`.
 6. **¿Por qué saltan los `id` después del failover?** Las secuencias se registran en el WAL por bloques de 32. No es pérdida de datos.
-7. **¿Cuánto tarda el failover?** Entre `ttl` (20 s) y unos 25 s si el primario se apaga de golpe. Si se detiene con limpieza, 2–8 s.
+7. **¿Cuánto tarda el failover?** Unos 20–30 s si el primario se apaga de golpe: el `ttl` de 20 s se cuenta desde la última renovación de la llave, más hasta un `loop_wait` (5 s) para detectarlo. En el laboratorio se midieron 22 s (apagado) y 27 s (partición). Si se detiene con limpieza, 2–8 s.
 8. **¿Por qué Docker?** Da el mismo binario y la misma glibc en macOS y Linux, lo que evita incompatibilidades de colación en la replicación física, y la configuración es idéntica y reproducible en los 3 nodos.
 9. **¿Cómo comprueban la integridad?** Con invariantes de negocio (suma de saldos constante), continuidad de secuencias por generador y hashes md5 idénticos entre los 3 nodos.
 10. **¿Qué mejorarían para producción?** TLS en PostgreSQL, etcd y la API de Patroni, respaldos y PITR con pgBackRest, *watchdog*, 5 nodos para tolerar 2 fallas, monitoreo con Prometheus y alertas.
@@ -1618,3 +1658,41 @@ En las 3: `docker compose down -v`. Luego repetir desde [§9.2](#92-arrancar-etc
 - [ ] Informe completo con capturas, tablas y gráficas
 - [ ] Repositorio actualizado en GitHub en las 3 máquinas (sin `.env`)
 - [ ] Demo ensayada con el guion de [§15](#15-fase-10-guion-de-la-demostración-en-vivo)
+
+---
+
+## 21. Laboratorio local: los 3 nodos en una sola máquina
+
+`laboratorio/` levanta el clúster completo en **un solo equipo** con Docker: 3 nodos (cada uno con su etcd, Patroni/PostgreSQL y HAProxy), más un contenedor `app` para el generador, el monitor y el verificador. Usa **la misma imagen y los mismos archivos** (`patroni/`, `haproxy/haproxy.cfg`, `sql/esquema.sql`, `app/`) que el clúster real. Si algo funciona en el laboratorio, la configuración es correcta, y lo único que cambia en las 3 PC es la red.
+
+Sirve para:
+- Ensayar la demo y las pruebas de falla sin tener las 3 máquinas juntas.
+- Validar cambios de configuración antes de llevarlos a las 3 PC.
+
+| Comando | Qué hace |
+|---------|----------|
+| `./laboratorio/lab.sh iniciar` | Construye la imagen, levanta los 3 nodos, espera primario y réplicas, y crea la BD |
+| `./laboratorio/lab.sh carga` | 3 generadores a 1 tx/s (logs en `evidencias/lab_generador_n*.log`) |
+| `./laboratorio/lab.sh monitor` | El mismo `monitor.py` del clúster real |
+| `./laboratorio/lab.sh apagar nX` | Apagado brusco (equivale a desconectar la corriente) |
+| `./laboratorio/lab.sh detener nX` | Apagado limpio |
+| `./laboratorio/lab.sh aislar nX` | Quita la red al nodo sin apagarlo (partición) |
+| `./laboratorio/lab.sh encender nX` | Lo vuelve a encender o reconectar |
+| `./laboratorio/lab.sh estado` / `primario` | `patronictl list` / qué nodo es el primario |
+| `./laboratorio/lab.sh parar-carga` / `verificar` | Detiene generadores / compara los 3 nodos |
+| `./laboratorio/lab.sh destruir` | Borra todo el laboratorio y sus datos |
+
+Paneles de HAProxy del laboratorio: `http://localhost:17000` (n1), `:27000` (n2) y `:37000` (n3).
+
+### 21.1 Resultados medidos en el laboratorio (Mac Apple Silicon, Docker Desktop)
+
+| Prueba | Resultado |
+|--------|-----------|
+| Arranque | Leader + Sync Standby + Replica en streaming. La réplica síncrona se asigna en el primer ciclo de Patroni (unos 5 s después del arranque). |
+| Carga | 180 tx/min (540 cambios/min) con 3 generadores. Suma = 1,000,000.00 |
+| **P3: primario apagado de golpe** | Nuevo primario en **~22 s**. Generadores: 1 error de conexión, 5 intentos sin primario y luego `seq` 67 confirmada en el nuevo primario (`intentos=2`). El minuto siguiente volvió a 180 tx/min por la recuperación del atraso. |
+| Reingreso del primario viejo | `pg_rewind: servers diverged at WAL location ... Done!` y luego réplica en streaming en el timeline 2 |
+| **P4: primario aislado de la red** | Nuevo primario en **~27 s**. El aislado se degradó solo (PostgreSQL reiniciando como réplica): no hubo dos primarios. Al reconectarlo volvió como réplica. |
+| Verificador después de cada prueba | `RESULTADO: OK. 3 nodos con datos idénticos, suma = 1,000,000, sin secuencias faltantes, un solo primario.` |
+
+> En los logs de Patroni aparecen avisos `ConnectionResetError` cada pocos segundos. Son los chequeos de salud de HAProxy, que cierran la conexión al terminar. Son inofensivos.
