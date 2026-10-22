@@ -1,0 +1,176 @@
+# Laboratorio: los 3 nodos del clúster en UNA sola máquina, para practicar y validar.
+# Usa la misma imagen de Patroni, el mismo patroni.yml y el mismo haproxy.cfg que el clúster real.
+# Cada "nodo" es un contenedor (nX) que tiene la IP; su Patroni y su HAProxy comparten esa red.
+# Se maneja con ./laboratorio/lab.sh
+
+name: hadb-lab
+
+x-etcd: &etcd
+  image: gcr.io/etcd-development/etcd:v3.5.17
+  restart: unless-stopped
+
+x-etcd-env: &etcd-env
+  ETCD_DATA_DIR: /etcd-data
+  ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+  ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+  ETCD_INITIAL_CLUSTER: n1=http://172.30.0.11:2380,n2=http://172.30.0.12:2380,n3=http://172.30.0.13:2380
+  ETCD_INITIAL_CLUSTER_STATE: new
+  ETCD_INITIAL_CLUSTER_TOKEN: hadb-lab
+
+x-patroni: &patroni
+  build: ../patroni
+  image: hadb/patroni:16
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 60s
+  shm_size: 256mb
+
+x-patroni-env: &patroni-env
+  PATRONI_SCOPE: hadb
+  PATRONI_ETCD3_HOSTS: "172.30.0.11:2379,172.30.0.12:2379,172.30.0.13:2379"
+  PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+  PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+  PATRONI_SUPERUSER_USERNAME: postgres
+  PATRONI_SUPERUSER_PASSWORD: lab-super
+  PATRONI_REPLICATION_USERNAME: replicator
+  PATRONI_REPLICATION_PASSWORD: lab-repl
+  PATRONI_REWIND_USERNAME: rewind_user
+  PATRONI_REWIND_PASSWORD: lab-rewind
+
+x-haproxy: &haproxy
+  image: haproxy:3.0
+  restart: unless-stopped
+  environment:
+    N1_IP: 172.30.0.11
+    N2_IP: 172.30.0.12
+    N3_IP: 172.30.0.13
+  volumes:
+    - ../haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
+services:
+  # ------------------------------------------------------------------ nodo 1
+  n1:
+    <<: *etcd
+    container_name: lab-n1
+    hostname: n1
+    command: [/usr/local/bin/etcd]
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: n1
+      ETCD_ADVERTISE_CLIENT_URLS: http://172.30.0.11:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://172.30.0.11:2380
+    networks: { lab: { ipv4_address: 172.30.0.11 } }
+    ports: ["17000:7000"]
+    volumes: [etcd-n1:/etcd-data]
+  n1-patroni:
+    <<: *patroni
+    container_name: lab-n1-patroni
+    network_mode: service:n1
+    depends_on: [n1]
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: n1
+      PATRONI_RESTAPI_CONNECT_ADDRESS: 172.30.0.11:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: 172.30.0.11:5432
+    volumes: [pg-n1:/var/lib/postgresql/data]
+  n1-haproxy:
+    <<: *haproxy
+    container_name: lab-n1-haproxy
+    network_mode: service:n1
+    depends_on: [n1]
+
+  # ------------------------------------------------------------------ nodo 2
+  n2:
+    <<: *etcd
+    container_name: lab-n2
+    hostname: n2
+    command: [/usr/local/bin/etcd]
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: n2
+      ETCD_ADVERTISE_CLIENT_URLS: http://172.30.0.12:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://172.30.0.12:2380
+    networks: { lab: { ipv4_address: 172.30.0.12 } }
+    ports: ["27000:7000"]
+    volumes: [etcd-n2:/etcd-data]
+  n2-patroni:
+    <<: *patroni
+    container_name: lab-n2-patroni
+    network_mode: service:n2
+    depends_on: [n2]
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: n2
+      PATRONI_RESTAPI_CONNECT_ADDRESS: 172.30.0.12:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: 172.30.0.12:5432
+    volumes: [pg-n2:/var/lib/postgresql/data]
+  n2-haproxy:
+    <<: *haproxy
+    container_name: lab-n2-haproxy
+    network_mode: service:n2
+    depends_on: [n2]
+
+  # ------------------------------------------------------------------ nodo 3
+  n3:
+    <<: *etcd
+    container_name: lab-n3
+    hostname: n3
+    command: [/usr/local/bin/etcd]
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: n3
+      ETCD_ADVERTISE_CLIENT_URLS: http://172.30.0.13:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://172.30.0.13:2380
+    networks: { lab: { ipv4_address: 172.30.0.13 } }
+    ports: ["37000:7000"]
+    volumes: [etcd-n3:/etcd-data]
+  n3-patroni:
+    <<: *patroni
+    container_name: lab-n3-patroni
+    network_mode: service:n3
+    depends_on: [n3]
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: n3
+      PATRONI_RESTAPI_CONNECT_ADDRESS: 172.30.0.13:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: 172.30.0.13:5432
+    volumes: [pg-n3:/var/lib/postgresql/data]
+  n3-haproxy:
+    <<: *haproxy
+    container_name: lab-n3-haproxy
+    network_mode: service:n3
+    depends_on: [n3]
+
+  # ------------------------------------------------------------------ cliente (generador, monitor, verificador)
+  app:
+    image: python:3.12-slim
+    container_name: lab-app
+    restart: unless-stopped
+    working_dir: /work
+    command: sh -c "pip install -q --root-user-action=ignore -r app/requirements.txt && exec sleep infinity"
+    environment:
+      N1_IP: 172.30.0.11
+      N2_IP: 172.30.0.12
+      N3_IP: 172.30.0.13
+      APP_PASSWORD: lab-app
+      HA_DSN: >-
+        host=172.30.0.11,172.30.0.12,172.30.0.13 port=5432 dbname=hadb user=app password=lab-app
+        target_session_attrs=read-write connect_timeout=3
+        keepalives=1 keepalives_idle=5 keepalives_interval=2 keepalives_count=3 tcp_user_timeout=10000
+    networks: { lab: { ipv4_address: 172.30.0.20 } }
+    volumes:
+      - ..:/work
+
+networks:
+  lab:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  etcd-n1:
+  etcd-n2:
+  etcd-n3:
+  pg-n1:
+  pg-n2:
+  pg-n3:
