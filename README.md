@@ -57,7 +57,9 @@ Muestra en vivo:
 - los cambios por minuto (con la línea del mínimo de 90) y la suma de saldos;
 - los eventos (caídas, failover con su duración, re-sincronización) y los últimos movimientos.
 
-Funciona sin internet. Desde otro equipo o un celular se abre con `http://<IP del equipo>:8080`. Solo lee: no cambia nada en el clúster.
+Funciona sin internet. Desde otro equipo o un celular se abre con `http://<IP del equipo>:8080`.
+
+Cada tarjeta de nodo tiene un botón **★ Hacer primario** (pide confirmación). Con replicación síncrona Patroni solo promueve a la réplica síncrona; si eliges otro nodo, el panel hace los cambios intermedios solo y muestra el avance. Para un panel que solo mire, sin botones: `./scripts/panel.sh --solo-lectura`.
 
 ## Practicar en un solo equipo
 

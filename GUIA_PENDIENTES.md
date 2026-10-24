@@ -268,6 +268,9 @@ Abrir `http://localhost:8080`, o desde otro equipo o un celular `http://<IP del 
 | Gráfica | Cambios por minuto de los últimos 10 min, línea del mínimo de 90 y marca ⚡ en cada failover |
 | Eventos | Caídas, cambios de rol, failover con su duración y re-sincronización |
 | Generadores / movimientos | Filas, `seq`, faltantes y en qué nodo se escribió cada movimiento |
+| **★ Hacer primario** | Botón en cada nodo para elegir el primario (switchover planificado, con confirmación). Si el elegido no es la réplica síncrona, hace los pasos intermedios solo y muestra el avance arriba de las tarjetas |
+
+> El botón sirve para dejar el primario donde quieras antes de la demo (por ejemplo en n2) o para mostrar un cambio planificado (P8). Para abrir un panel que solo mire, sin botones: `./scripts/panel.sh --solo-lectura`.
 
 ### 9.4 Verificación de integridad
 
@@ -304,7 +307,7 @@ python app/verificar.py --esperar    # → RESULTADO: OK. 3 nodos con datos idé
 | P5 | Quitar la red a una **réplica** | Reconectar | Sin interrupción |
 | P6 | `sudo reboot` en cualquier nodo | Esperar | Vuelve solo como réplica |
 | P7 | Apagar un nodo 30–60 min con carga | Encenderlo | Se pone al día solo |
-| P8 | `./scripts/pctl.sh switchover --force` | n/a | Cambio de primario en pocos segundos |
+| P8 | Botón **★ Hacer primario** del panel, o `./scripts/pctl.sh switchover --force` | n/a | Cambio de primario en pocos segundos |
 | P9 | En el primario: `docker compose stop patroni` | `docker compose start patroni` | Nuevo primario en 2–8 s |
 
 - Después de encender un equipo apagado, **no hay que correr nada**: Docker levanta los contenedores solo. En la Mac, Docker Desktop tiene que estar configurado para iniciar con la sesión (paso 4.3).
