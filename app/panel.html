@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel del clúster</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --surface-2: #f0efec;
+    --border: #e2e1dc;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7974;
+    --series-1: #2a78d6;
+    --accent-soft: #e3eefb;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --critical-soft: #fbe9e9;
+    --good-soft: #e5f5e5;
+    --warning-soft: #fdf3dc;
+    --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --surface-2: #232321;
+      --border: #2e2e2b;
+      --grid: #2a2a27;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8f8e86;
+      --series-1: #3987e5;
+      --accent-soft: #1b2a3d;
+      --good-text: #5fd35f;
+      --critical-soft: #3a1d1d;
+      --good-soft: #17301a;
+      --warning-soft: #352a12;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --border: #2e2e2b;
+    --grid: #2a2a27;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --series-1: #3987e5;
+    --accent-soft: #1b2a3d;
+    --good-text: #5fd35f;
+    --critical-soft: #3a1d1d;
+    --good-soft: #17301a;
+    --warning-soft: #352a12;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, "Helvetica Neue", Arial, sans-serif;
+  }
+  .contenedor { max-width: 1240px; margin: 0 auto; padding: 16px; }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .espaciador { flex: 1; }
+  .reloj { color: var(--text-muted); font-family: var(--mono); font-size: 13px; }
+  button.tema {
+    background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+
+  .pastilla {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface-1);
+  }
+  .pastilla .punto { width: 10px; height: 10px; border-radius: 50%; }
+  .nivel-sano .punto { background: var(--good); }
+  .nivel-aviso .punto, .nivel-degradado .punto { background: var(--warning); }
+  .nivel-critico { background: var(--critical-soft); }
+  .nivel-critico .punto { background: var(--critical); animation: latido 1s infinite; }
+  @keyframes latido { 50% { opacity: .3; } }
+
+  .tarjeta {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+  }
+  .tarjeta h2 {
+    font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  .kpi .etiqueta { color: var(--text-secondary); font-size: 13px; }
+  .kpi .valor { font-size: 32px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .kpi .detalle { color: var(--text-muted); font-size: 12.5px; }
+  .estado-linea { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+  .ok { color: var(--good-text); }
+  .mal { color: var(--critical); }
+  .medio { color: var(--text-secondary); }
+
+  .fila2 { display: grid; grid-template-columns: 380px 1fr; gap: 12px; margin-bottom: 12px; }
+  .fila3 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+  /* Topología */
+  #topologia svg { width: 100%; height: auto; display: block; }
+  .leyenda-topo { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+  .leyenda-topo span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Nodos */
+  .nodos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .nodo { position: relative; }
+  .nodo.rol-primario { border-color: var(--series-1); box-shadow: inset 0 0 0 1px var(--series-1); }
+  .nodo.rol-caido { background: var(--critical-soft); }
+  .nodo .cabeza { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .nodo .nombre { font-size: 22px; font-weight: 700; }
+  .nodo .ip { color: var(--text-muted); font-family: var(--mono); font-size: 12.5px; }
+  .insignia {
+    display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
+    padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 650;
+    background: var(--surface-2); color: var(--text-secondary);
+  }
+  .insignia.primario { background: var(--series-1); color: #fff; }
+  .insignia.sincrona { background: var(--accent-soft); color: var(--text-primary); }
+  .insignia.caido { background: var(--critical); color: #fff; }
+  dl.datos { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+  dl.datos dt { color: var(--text-muted); }
+  dl.datos dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+
+  /* Gráfica */
+  #grafica { position: relative; }
+  #grafica svg { display: block; width: 100%; height: 260px; overflow: visible; }
+  .eje text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 9px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    white-space: nowrap; display: none;
+  }
+  .tooltip b { font-variant-numeric: tabular-nums; }
+  details.datos-grafica { margin-top: 8px; font-size: 12.5px; color: var(--text-secondary); }
+  details.datos-grafica table { margin-top: 6px; }
+
+  /* Tablas y eventos */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 12px; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 5px 6px; border-bottom: 1px solid var(--grid); }
+  td.num, th.num { text-align: right; }
+  .eventos { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow-y: auto; }
+  .eventos li { display: grid; grid-template-columns: 64px 22px 1fr; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+  .eventos .h { color: var(--text-muted); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
+  .eventos .i { text-align: center; }
+  .vacio { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+  .aviso-conexion {
+    display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 10px;
+    background: var(--warning-soft); border: 1px solid var(--warning); font-size: 13px;
+  }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+
+  .kpis > *, .nodos > *, .fila2 > *, .fila3 > * { min-width: 0; }
+  #generadores, #recientes, #tabla-grafica { overflow-x: auto; }
+  @media (max-width: 980px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .fila2, .fila3 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .nodos { grid-template-columns: 1fr; }
+    .kpi .valor { font-size: 24px; }
+    .contenedor { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <header>
+    <h1>Clúster hadb</h1>
+    <span id="estado" class="pastilla"><span class="punto"></span><span>Conectando…</span></span>
+    <span class="espaciador"></span>
+    <span class="reloj" id="reloj">--:--:--</span>
+    <button class="tema" id="tema" type="button" title="Cambiar tema">◐ Tema</button>
+  </header>
+
+  <div class="aviso-conexion" id="aviso">Sin conexión con el panel (el equipo que lo sirve no responde). Reintentando…</div>
+
+  <section class="kpis">
+    <div class="tarjeta kpi">
+      <div class="etiqueta">Cambios por minuto</div>
+      <div class="valor" id="k-cambios">–</div>
+      <div class="detalle" id="k-cambios-d">últimos 60 s · mínimo 90</div>
+    </div>
+    <div class="tarjeta kpi">
+      <div class="etiqueta">Primario</div>
+      <div class="valor" id="k-primario">–</div>
+      <div class="detalle" id="k-primario-d"></div>
+    </div>
+    <div class="tarjeta kpi">
+      <div class="etiqueta">Integridad (suma de saldos)</div>
+      <div class="valor" id="k-suma">–</div>
+      <div class="detalle" id="k-suma-d"></div>
+    </div>
+    <div class="tarjeta kpi">
+      <div class="etiqueta">Último failover</div>
+      <div class="valor" id="k-failover">–</div>
+      <div class="detalle" id="k-failover-d">aún no ha ocurrido</div>
+    </div>
+  </section>
+
+  <section class="nodos" id="nodos"></section>
+
+  <section class="fila2">
+    <div class="tarjeta" id="topologia">
+      <h2>Replicación</h2>
+      <div id="topo-svg"></div>
+      <div class="leyenda-topo">
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--series-1)" stroke-width="3"/></svg>síncrona</span>
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--text-muted)" stroke-width="2" stroke-dasharray="4 3"/></svg>asíncrona</span>
+        <span>✕ nodo caído</span>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2>Cambios por minuto · últimos 10 min</h2>
+      <div id="grafica">
+        <svg id="svg-grafica" role="img" aria-label="Cambios por minuto en los últimos 10 minutos"></svg>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+      <details class="datos-grafica">
+        <summary>Ver datos en tabla</summary>
+        <div id="tabla-grafica"></div>
+      </details>
+    </div>
+  </section>
+
+  <section class="fila3">
+    <div class="tarjeta">
+      <h2>Eventos</h2>
+      <ul class="eventos" id="eventos"></ul>
+    </div>
+    <div class="tarjeta">
+      <h2>Generadores de carga</h2>
+      <div id="generadores"></div>
+    </div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Últimos movimientos</h2>
+    <div id="recientes"></div>
+  </section>
+
+  <footer>Datos de la API de Patroni, etcd, HAProxy y PostgreSQL de cada nodo, actualizados cada segundo. El panel solo lee: no modifica nada.</footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (n, d = 0) => n == null ? "–" : Number(n).toLocaleString("es-GT", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const bytes = (b) => b == null ? "–" : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+  const horaDe = (t) => new Date(t * 1000).toLocaleTimeString("es-GT", { hour12: false });
+
+  // ---- Tema (claro / oscuro / sistema), recordado en este navegador
+  const raiz = document.documentElement;
+  try { const g = localStorage.getItem("panel-tema"); if (g) raiz.dataset.theme = g; } catch (e) {}
+  $("tema").addEventListener("click", () => {
+    const oscuro = raiz.dataset.theme ? raiz.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    raiz.dataset.theme = oscuro ? "light" : "dark";
+    try { localStorage.setItem("panel-tema", raiz.dataset.theme); } catch (e) {}
+    if (ultima) dibujarGrafica(ultima);
+  });
+
+  const ROLES = {
+    primario: { texto: "Primario", icono: "★" },
+    sincrona: { texto: "Réplica síncrona", icono: "⇄" },
+    replica: { texto: "Réplica", icono: "↓" },
+    caido: { texto: "Caído", icono: "✕" },
+  };
+  const ICONOS_EVENTO = { info: "ℹ", caida: "✕", recupera: "✔", rol: "↻", failover: "⚡", error: "⚠" };
+
+  let ultima = null;
+
+  // ---- Encabezado y KPIs
+  function pintarResumen(d) {
+    const est = $("estado");
+    est.className = `pastilla nivel-${d.estado.nivel}`;
+    est.querySelector("span:last-child").textContent = d.estado.texto;
+    $("reloj").textContent = horaDe(d.generado);
+
+    const c = d.carga;
+    $("k-cambios").textContent = num(c.cambios_min);
+    const okCarga = c.cambios_min != null && c.cambios_min >= c.minimo;
+    $("k-cambios-d").innerHTML = c.cambios_min == null ? "sin datos del primario" :
+      !d.primario.disponible ? `<span class="estado-linea medio">⏸ último valor conocido (hace ${num(c.datos_de_hace)} s)</span>` :
+      `<span class="estado-linea ${okCarga ? "ok" : "mal"}">${okCarga ? "✔ cumple" : "✕ bajo"}</span> · mínimo ${c.minimo} · ${num(c.tx_min)} tx`;
+
+    const p = d.primario;
+    if (p.disponible) {
+      $("k-primario").textContent = p.nodo;
+      $("k-primario-d").innerHTML = `${esc(p.ip)} · timeline ${esc(d.timeline ?? "–")}`;
+    } else {
+      $("k-primario").innerHTML = `<span class="mal">Ninguno</span>`;
+      $("k-primario-d").innerHTML = `<span class="estado-linea mal">✕ sin primario${p.sin_primario_s != null ? ` hace ${num(p.sin_primario_s, 1)} s` : ""}</span>`;
+    }
+
+    const i = d.integridad;
+    $("k-suma").textContent = i.suma == null ? "–" : num(i.suma, 2);
+    $("k-suma-d").innerHTML = i.suma == null ? "sin datos" :
+      `<span class="estado-linea ${i.ok && !i.faltan ? "ok" : "mal"}">${i.ok ? "✔ suma correcta" : "✕ suma alterada"}</span> · faltan ${num(i.faltan)} · ${num(c.total)} movimientos`;
+
+    const f = d.ultimo_failover;
+    if (f) {
+      $("k-failover").textContent = `${num(f.segundos, 1)} s`;
+      const hace = Math.round(d.generado - f.t);
+      $("k-failover-d").textContent = `a las ${horaDe(f.t)} (hace ${hace < 60 ? hace + " s" : Math.round(hace / 60) + " min"}) · nuevo primario ${f.nuevo}`;
+    }
+  }
+
+  // ---- Tarjetas de nodo
+  function pintarNodos(d) {
+    $("nodos").innerHTML = d.nodos.map((n) => {
+      const r = ROLES[n.rol] || ROLES.replica;
+      const bd = n.bd || {};
+      const filas = bd.error ? `<span class="mal" title="${esc(bd.error)}">error</span>` : num(bd.movimientos);
+      const suma = bd.suma == null ? "–" : num(bd.suma, 2);
+      const haproxy = n.haproxy == null ? "–" : n.haproxy === "sin respuesta" ? `<span class="mal">sin respuesta</span>` : `→ ${esc(n.haproxy)}`;
+      return `<article class="tarjeta nodo rol-${n.rol}">
+        <div class="cabeza">
+          <span class="nombre">${esc(n.nombre)}</span><span class="ip">${esc(n.ip)}</span>
+          <span class="insignia ${n.rol}">${r.icono} ${r.texto}</span>
+        </div>
+        <dl class="datos">
+          <dt>Estado</dt><dd>${n.vivo ? esc(n.estado) : `<span class="mal">sin respuesta${n.hace != null ? ` (${num(n.hace, 0)} s)` : ""}</span>`}</dd>
+          <dt>Timeline</dt><dd>${esc(n.timeline ?? "–")}</dd>
+          <dt>Retraso (lag)</dt><dd>${n.rol === "primario" ? "—" : n.vivo ? bytes(n.lag) : "–"}</dd>
+          <dt>Movimientos</dt><dd>${n.vivo ? filas : "–"}</dd>
+          <dt>Suma de saldos</dt><dd>${n.vivo ? suma : "–"}</dd>
+          <dt>etcd</dt><dd>${n.etcd ? '<span class="ok">✔ sano</span>' : '<span class="mal">✕ sin respuesta</span>'}</dd>
+          <dt>HAProxy escribe en</dt><dd>${haproxy}</dd>
+        </dl>
+      </article>`;
+    }).join("");
+  }
+
+  // ---- Topología (triángulo de 3 nodos con flechas desde el primario)
+  function pintarTopologia(d) {
+    const W = 340, H = 256;
+    const pos = { n1: [W / 2, 62], n2: [60, 190], n3: [W - 60, 190] };
+    const prim = d.nodos.find((n) => n.rol === "primario" && n.vivo);
+    let lineas = "";
+    if (prim) {
+      for (const n of d.nodos) {
+        if (n.nombre === prim.nombre || !n.vivo) continue;
+        const [x1, y1] = pos[prim.nombre], [x2, y2] = pos[n.nombre];
+        const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+        const a = [x1 + ux * 34, y1 + uy * 34], b = [x2 - ux * 38, y2 - uy * 38];
+        const sync = n.rol === "sincrona";
+        const color = sync ? "var(--series-1)" : "var(--text-muted)";
+        lineas += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${color}" stroke-width="${sync ? 3 : 2}"
+          ${sync ? "" : 'stroke-dasharray="5 4"'} marker-end="url(#flecha-${sync ? "s" : "a"})"/>`;
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        lineas += `<text x="${mx + (uy > 0 ? 10 : -10) * Math.sign(ux || 1)}" y="${my - 6}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">${sync ? "síncrona" : "asíncrona"} · ${bytes(n.lag)}</text>`;
+      }
+    }
+    const circulos = d.nodos.map((n) => {
+      const [x, y] = pos[n.nombre];
+      const r = ROLES[n.rol] || ROLES.replica;
+      const fill = n.rol === "primario" ? "var(--series-1)" : n.rol === "caido" ? "var(--critical-soft)" : "var(--surface-2)";
+      const stroke = n.rol === "caido" ? "var(--critical)" : n.rol === "primario" ? "var(--series-1)" : "var(--border)";
+      const tinta = n.rol === "primario" ? "#fff" : "var(--text-primary)";
+      return `<g>
+        <circle cx="${x}" cy="${y}" r="30" fill="${fill}" stroke="${stroke}" stroke-width="2" ${n.rol === "caido" ? 'stroke-dasharray="4 3"' : ""}/>
+        <text x="${x}" y="${y + 1}" text-anchor="middle" font-size="16" font-weight="700" fill="${tinta}">${esc(n.nombre)}</text>
+        <text x="${x}" y="${y + 15}" text-anchor="middle" font-size="11" fill="${tinta}">${r.icono}</text>
+        <text x="${x}" y="${y + (n.nombre === "n1" ? -38 : 46)}" text-anchor="middle" font-size="11.5" font-weight="600" fill="${n.rol === "caido" ? "var(--critical)" : "var(--text-secondary)"}">${r.texto}</text>
+      </g>`;
+    }).join("");
+    $("topo-svg").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Topología de replicación">
+      <defs>
+        <marker id="flecha-s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--series-1)"/></marker>
+        <marker id="flecha-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker>
+      </defs>${lineas}${circulos}</svg>`;
+  }
+
+  // ---- Gráfica de línea: cambios/min por ventana de 10 s, con umbral de 90 y marcas de failover
+  function dibujarGrafica(d) {
+    const svg = $("svg-grafica");
+    const W = svg.clientWidth || 600, H = 260;
+    const m = { t: 14, r: 16, b: 26, l: 44 };
+    const datos = d.serie || [];
+    if (!datos.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--text-muted)" font-size="13">Sin datos todavía: arranca los generadores</text>`; return; }
+
+    const t0 = datos[0].t, t1 = datos[datos.length - 1].t;
+    const maxV = Math.max(120, ...datos.map((p) => p.cambios_min));
+    const paso = maxV > 1200 ? 300 : maxV > 600 ? 200 : maxV > 300 ? 100 : 50;
+    const yMax = Math.ceil((maxV * 1.1) / paso) * paso;
+    const x = (t) => m.l + ((t - t0) / Math.max(1, t1 - t0)) * (W - m.l - m.r);
+    const y = (v) => H - m.b - (v / yMax) * (H - m.t - m.b);
+
+    let g = "";
+    for (let v = 0; v <= yMax; v += paso) {
+      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;
+      g += `<text class="eje-t" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`;
+    }
+    for (let t = Math.ceil(t0 / 120) * 120; t <= t1; t += 120) {
+      g += `<text class="eje-t" x="${x(t)}" y="${H - 6}" text-anchor="middle">${horaDe(t).slice(0, 5)}</text>`;
+    }
+    // Umbral mínimo
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(90)}" y2="${y(90)}" stroke="var(--critical)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+    g += `<text x="${W - m.r}" y="${y(90) - 6}" text-anchor="end" font-size="11" font-weight="600" fill="var(--text-secondary)">mínimo 90</text>`;
+    // Marcas de failover
+    for (const mk of d.marcas || []) {
+      if (mk.t < t0 || mk.t > t1 + 10) continue;
+      const xm = x(Math.min(mk.t, t1));
+      g += `<line x1="${xm}" x2="${xm}" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      const derecha = xm > W - m.r - 110;   // cerca del borde: la etiqueta va a la izquierda de la línea
+      g += `<text x="${derecha ? xm - 4 : xm + 4}" y="${m.t + 10}" text-anchor="${derecha ? "end" : "start"}" font-size="11" fill="var(--text-secondary)">⚡ ${esc(mk.texto)}</text>`;
+    }
+    // Línea de la serie
+    const ruta = datos.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.cambios_min).toFixed(1)}`).join("");
+    g += `<path d="${ruta}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const u = datos[datos.length - 1];
+    g += `<circle cx="${x(u.t)}" cy="${y(u.cambios_min)}" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>`;
+    // Capa de hover
+    g += `<line id="cruz" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-muted)" stroke-width="1" visibility="hidden"/>`;
+    g += `<circle id="punto-hover" r="5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" visibility="hidden"/>`;
+    g += `<rect id="zona-hover" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+    svg.innerHTML = `<g class="eje">${g}</g>`;
+    svg.querySelectorAll(".eje-t").forEach((t) => t.setAttribute("fill", "var(--text-muted)"));
+
+    const zona = $("zona-hover"), cruz = $("cruz"), ph = $("punto-hover"), tip = $("tooltip");
+    zona.addEventListener("mousemove", (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = ev.clientX - r.left;
+      const t = t0 + ((px - m.l) / (W - m.l - m.r)) * (t1 - t0);
+      let mejor = datos[0];
+      for (const p of datos) if (Math.abs(p.t - t) < Math.abs(mejor.t - t)) mejor = p;
+      const cx = x(mejor.t), cy = y(mejor.cambios_min);
+      cruz.setAttribute("x1", cx); cruz.setAttribute("x2", cx); cruz.setAttribute("visibility", "visible");
+      ph.setAttribute("cx", cx); ph.setAttribute("cy", cy); ph.setAttribute("visibility", "visible");
+      tip.style.display = "block";
+      tip.innerHTML = `${horaDe(mejor.t)}–${horaDe(mejor.t + 10).slice(-2)}<br><b>${num(mejor.cambios_min)}</b> cambios/min · ${num(mejor.cambios_min / 18)} tx en 10 s`;
+      const izq = Math.min(cx + 12, W - tip.offsetWidth - 4);
+      tip.style.left = `${izq}px`; tip.style.top = `${Math.max(0, cy - 48)}px`;
+    });
+    zona.addEventListener("mouseleave", () => {
+      cruz.setAttribute("visibility", "hidden"); ph.setAttribute("visibility", "hidden"); tip.style.display = "none";
+    });
+
+    $("tabla-grafica").innerHTML = `<table><thead><tr><th>Ventana</th><th class="num">Cambios/min</th></tr></thead><tbody>${
+      datos.slice(-30).reverse().map((p) => `<tr><td>${horaDe(p.t)}</td><td class="num">${num(p.cambios_min)}</td></tr>`).join("")
+    }</tbody></table>`;
+  }
+
+  function pintarEventos(d) {
+    $("eventos").innerHTML = d.eventos.length ? d.eventos.map((e) =>
+      `<li><span class="h">${horaDe(e.t)}</span><span class="i ${e.tipo === "caida" || e.tipo === "error" ? "mal" : e.tipo === "recupera" ? "ok" : "medio"}">${ICONOS_EVENTO[e.tipo] || "•"}</span><span>${esc(e.texto)}</span></li>`
+    ).join("") : `<li class="vacio">Sin eventos</li>`;
+  }
+
+  function pintarGeneradores(d) {
+    const gs = d.generadores || [];
+    $("generadores").innerHTML = gs.length ? `<table><thead><tr><th>Generador</th><th class="num">Filas</th><th class="num">Último seq</th><th class="num">Faltan</th><th>Estado</th></tr></thead><tbody>${
+      gs.map((g) => {
+        const activo = g.hace < 5;
+        return `<tr><td>${esc(g.nombre)}</td><td class="num">${num(g.filas)}</td><td class="num">${num(g.ultimo_seq)}</td>
+          <td class="num ${g.faltan ? "mal" : ""}">${num(g.faltan)}</td>
+          <td>${activo ? '<span class="ok">● activo</span>' : `<span class="medio">○ inactivo (${g.hace < 120 ? num(g.hace) + " s" : Math.round(g.hace / 60) + " min"})</span>`}</td></tr>`;
+      }).join("")
+    }</tbody></table>` : `<div class="vacio">Aún no hay movimientos. Arranca <code>app/generador.py</code> en cada equipo.</div>`;
+  }
+
+  function pintarRecientes(d) {
+    const rs = d.recientes || [];
+    $("recientes").innerHTML = rs.length ? `<table><thead><tr><th>Hora</th><th>Generador</th><th class="num">Seq</th><th>Transferencia</th><th class="num">Monto</th><th>Escrito en</th></tr></thead><tbody>${
+      rs.map((r) => `<tr><td>${horaDe(r.t)}</td><td>${esc(r.generador)}</td><td class="num">${num(r.seq)}</td>
+        <td>cuenta ${esc(r.origen)} → ${esc(r.destino)}</td><td class="num">Q${num(r.monto, 2)}</td><td>${esc(r.primario)}</td></tr>`).join("")
+    }</tbody></table>` : `<div class="vacio">Sin movimientos todavía.</div>`;
+  }
+
+  function pintar(d) {
+    ultima = d;
+    pintarResumen(d);
+    pintarNodos(d);
+    pintarTopologia(d);
+    dibujarGrafica(d);
+    pintarEventos(d);
+    pintarGeneradores(d);
+    pintarRecientes(d);
+  }
+
+  // ---- Conexión: una consulta por segundo (no ocupa conexiones abiertas, así que admite muchas pestañas)
+  let fallos = 0;
+  async function consultar() {
+    const control = new AbortController();
+    const espera = setTimeout(() => control.abort(), 3000);
+    try {
+      const r = await fetch("api/estado", { cache: "no-store", signal: control.signal });
+      const d = await r.json();
+      fallos = 0;
+      $("aviso").style.display = "none";
+      if (d.nodos) pintar(d);
+    } catch (e) {
+      if (++fallos >= 3) $("aviso").style.display = "block";
+    } finally {
+      clearTimeout(espera);
+      setTimeout(consultar, 1000);
+    }
+  }
+  window.addEventListener("resize", () => { if (ultima) dibujarGrafica(ultima); });
+  consultar();
+})();
+</script>
+</body>
+</html>
