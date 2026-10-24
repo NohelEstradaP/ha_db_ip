@@ -234,6 +234,10 @@ paso_puertos() {
   done
   if [ -n "$ocupados" ]; then
     aviso "puertos ocupados:$ocupados"
+    if [ "$SO" = "mac" ] && lsof -nP -iTCP:5000 -iTCP:7000 -sTCP:LISTEN 2>/dev/null | grep -q '^ControlCe'; then
+      aviso "5000 y 7000 los usa el Receptor AirPlay de macOS. Desactívalo en:"
+      aviso "Ajustes del Sistema → General → AirDrop y Handoff → Receptor AirPlay"
+    fi
     aviso "si es un PostgreSQL local: 'brew services stop postgresql@16' (Mac) o 'sudo systemctl disable --now postgresql' (Linux)"
     confirmar "¿Continuar de todos modos?" || exit 1
   else

@@ -375,6 +375,7 @@ Estructura y lista de evidencias en el **plan §16**. Ya hay material:
 | etcd: `cluster ID mismatch` | En los 3: `docker compose down` y `docker volume rm hadb_etcd-data`, luego `./scripts/iniciar.sh` (plan §17) |
 | Cambiaron las IP (modo LAN) | Plan §6.4 |
 | La Mac no recibe conexiones | Firewall de macOS: permitir Docker (plan §5.1 y §17) |
+| Mac: puertos 5000 y 7000 ocupados (`ControlCe`) | Es el Receptor AirPlay: *Ajustes → General → AirDrop y Handoff → Receptor AirPlay* apagado |
 | Monitor < 90 cambios/min | Revisar que los generadores sigan vivos; si la red es lenta, `--tps 2` |
 | Docker no arranca tras reiniciar (Pop!_OS) | `sudo systemctl enable --now docker` |
 | La Mac se durmió | Despertarla; vuelve sola como réplica |

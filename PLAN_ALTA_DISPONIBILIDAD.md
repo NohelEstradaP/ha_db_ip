@@ -1549,6 +1549,7 @@ ORDER BY 1;
 | El nodo que regresa queda en `start failed` | `pg_rewind` falló o faltan WAL | `patronictl reinit hadb <nodo> --force` (copia completa desde el primario) |
 | `patronictl` no encuentra etcd | No toma las variables de entorno | `patronictl -c /etc/patroni/patroni.yml --dcs-url etcd3://$N1_IP:2379 list` |
 | La Mac no recibe conexiones por la IP de Tailscale | Firewall de macOS o Docker Desktop no publica en esa interfaz | Permitir Docker en el firewall. Probar `nc -vz <IP_mac> 5432` desde otro nodo. Como alternativa, instalar OrbStack en lugar de Docker Desktop (mismo `docker compose`). |
+| Mac: 5000 y 7000 ocupados por `ControlCenter` | Receptor AirPlay de macOS (Monterey o posterior) | *Ajustes del Sistema → General → AirDrop y Handoff → Receptor AirPlay* apagado |
 | HAProxy marca todos en rojo | No llega al 8008 o la IP en el `.env` está mal | `curl http://<IP>:8008/primary` desde ese nodo |
 | Monitor: cambios/min < 90 | Generadores detenidos o lentos por latencia alta (DERP) | Subir `--tps 2` en los generadores |
 | Escrituras se quedan colgadas | Replicación síncrona sin réplica disponible durante un instante | Se resuelve sola cuando Patroni reasigna la síncrona (≤ 10 s) |
