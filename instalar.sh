@@ -7,18 +7,24 @@
 #   ./instalar.sh --lan      sin Tailscale: usa las IP de la red local
 #   ./instalar.sh --solo-env solo vuelve a generar el archivo .env
 #   ./instalar.sh -y         responde "sí" a todas las confirmaciones
+#   ./instalar.sh --manual   ignora cluster.env.enc y pide IP y contraseñas a mano
+#
+# Si el repositorio trae cluster.env.enc, solo pide la frase del clúster (o HADB_FRASE=...)
+# y reconoce qué nodo es este equipo por su IP de Tailscale.
 set -euo pipefail
 source "$(dirname "$0")/scripts/comun.sh"
 
 MODO_RED="tailscale"
 SOLO_ENV=0
 SI_A_TODO=0
+MANUAL=0
 for arg in "$@"; do
   case "$arg" in
     --lan) MODO_RED="lan" ;;
     --solo-env) SOLO_ENV=1 ;;
     -y|--si) SI_A_TODO=1 ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --manual) MANUAL=1 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) fallo "opción desconocida: $arg" ;;
   esac
 done
@@ -253,6 +259,67 @@ paso_puertos() {
   fi
 }
 
+escribir_env() {  # escribir_env nombre ip_propia n1 n2 n3 clave_super clave_repl clave_rewind clave_app
+  umask 077
+  cat > .env <<EOF
+# Generado por instalar.sh el $(date '+%Y-%m-%d %H:%M'). NO subir a GitHub.
+# Modo de red: $MODO_RED
+
+# ---- Identidad de ESTE nodo ----
+NODE_NAME=$1
+NODE_IP=$2
+
+# ---- IP de los 3 nodos (idénticas en las 3 máquinas) ----
+N1_IP=$3
+N2_IP=$4
+N3_IP=$5
+
+# ---- Contraseñas (idénticas en las 3 máquinas) ----
+PG_SUPERUSER_PASSWORD=$6
+PG_REPLICATION_PASSWORD=$7
+PG_REWIND_PASSWORD=$8
+APP_PASSWORD=$9
+EOF
+  umask 022
+}
+
+# Configuración desde cluster.env.enc: solo pide la frase y reconoce el nodo por su IP
+env_desde_cifrado() {
+  echo "    El repositorio trae la configuración cifrada del clúster (cluster.env.enc)."
+  local datos="" intento clave valor
+  local n1="" n2="" n3="" c1="" c2="" c3="" c4=""
+  for intento in 1 2 3; do
+    datos=$(./scripts/secretos.sh leer 2>/dev/null) && break
+    datos=""
+    [ -n "${HADB_FRASE:-}" ] && break      # frase fija por variable: no tiene sentido reintentar
+    echo "    Frase incorrecta ($intento de 3)."
+  done
+  [ -n "$datos" ] || { aviso "no se pudo descifrar; se piden los datos a mano"; return 1; }
+  while IFS='=' read -r clave valor; do
+    case "$clave" in
+      N1_IP) n1="$valor" ;; N2_IP) n2="$valor" ;; N3_IP) n3="$valor" ;;
+      PG_SUPERUSER_PASSWORD) c1="$valor" ;; PG_REPLICATION_PASSWORD) c2="$valor" ;;
+      PG_REWIND_PASSWORD) c3="$valor" ;; APP_PASSWORD) c4="$valor" ;;
+    esac
+  done <<< "$datos"
+
+  local mi_ip nombre="" propia=""
+  mi_ip="$(ip_local)"
+  [ "$mi_ip" = "$n1" ] && { nombre=n1; propia="$n1"; }
+  [ "$mi_ip" = "$n2" ] && { nombre=n2; propia="$n2"; }
+  [ "$mi_ip" = "$n3" ] && { nombre=n3; propia="$n3"; }
+  if [ -z "$nombre" ]; then
+    aviso "La IP de este equipo (${mi_ip:-no detectada}) no es ninguna del clúster: n1=$n1 · n2=$n2 · n3=$n3"
+    aviso "Si reinstalaste el equipo, Tailscale le dio una IP nueva. Para recuperar la anterior:"
+    aviso "  https://login.tailscale.com/admin/machines → borra la máquina vieja →"
+    aviso "  en la nueva: ⋯ → Edit machine IPv4 → pon la IP anterior. Luego vuelve a correr ./instalar.sh"
+    fallo "no se reconoció qué nodo es este equipo (para configurarlo a mano: ./instalar.sh --manual)"
+  fi
+  escribir_env "$nombre" "$propia" "$n1" "$n2" "$n3" "$c1" "$c2" "$c3" "$c4"
+  cargar_env
+  ok "este equipo es $NODE_NAME ($NODE_IP); .env creado desde la configuración cifrada"
+}
+
 paso_env() {
   info "Archivo .env de este nodo"
   if [ -f .env ] && [ "$SOLO_ENV" = 0 ]; then
@@ -261,6 +328,10 @@ paso_env() {
       ok "se usa el .env existente ($NODE_NAME, $NODE_IP)"
       return 0
     fi
+  fi
+
+  if [ -f cluster.env.enc ] && [ "$MANUAL" = 0 ] && env_desde_cifrado; then
+    return 0
   fi
 
   local mi_ip nombre n1 n2 n3 propia
@@ -301,33 +372,14 @@ paso_env() {
     preguntar c4 "APP_PASSWORD" ""
   fi
 
-  umask 077
-  cat > .env <<EOF
-# Generado por instalar.sh el $(date '+%Y-%m-%d %H:%M'). NO subir a GitHub.
-# Modo de red: $MODO_RED
-
-# ---- Identidad de ESTE nodo ----
-NODE_NAME=$nombre
-NODE_IP=$propia
-
-# ---- IP de los 3 nodos (idénticas en las 3 máquinas) ----
-N1_IP=$n1
-N2_IP=$n2
-N3_IP=$n3
-
-# ---- Contraseñas (idénticas en las 3 máquinas) ----
-PG_SUPERUSER_PASSWORD=$c1
-PG_REPLICATION_PASSWORD=$c2
-PG_REWIND_PASSWORD=$c3
-APP_PASSWORD=$c4
-EOF
-  umask 022
+  escribir_env "$nombre" "$propia" "$n1" "$n2" "$n3" "$c1" "$c2" "$c3" "$c4"
   cargar_env
   ok ".env creado para $NODE_NAME ($NODE_IP)"
   echo
   echo "    ${C_NEGRITA}Copia estas 4 líneas: las vas a pegar al configurar los otros equipos:${C_FIN}"
   grep PASSWORD .env | sed 's/^/      /'
   echo
+  aviso "Guárdalas en un lugar seguro: si reinstalas una PC las vas a necesitar."
 }
 
 paso_firewall() {
@@ -397,3 +449,6 @@ paso_firewall
 paso_python
 paso_imagenes
 resumen
+if confirmar "¿Levantar ahora este nodo y unirlo al clúster (./scripts/iniciar.sh)?"; then
+  exec ./scripts/iniciar.sh
+fi
