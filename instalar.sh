@@ -127,21 +127,29 @@ paso_paquetes() {
 paso_docker() {
   info "Docker"
   if [ "$SO" = "mac" ]; then
-    if [ ! -d /Applications/Docker.app ]; then
+    # Sirve Docker Desktop u OrbStack (mismo CLI 'docker'); solo se instala Docker Desktop si no hay ninguno
+    local app="Docker"
+    if [ -d /Applications/OrbStack.app ]; then
+      app="OrbStack"
+    elif [ ! -d /Applications/Docker.app ]; then
       brew install --cask docker
     fi
     if ! docker info >/dev/null 2>&1; then
-      open -a Docker
-      echo "    Esperando a que Docker Desktop arranque (la primera vez pide aceptar términos)..."
+      open -a "$app"
+      echo "    Esperando a que $app arranque (la primera vez puede pedir permisos o aceptar términos)..."
       local i
       for i in $(seq 1 90); do
         docker info >/dev/null 2>&1 && break
-        [ "$i" = 90 ] && fallo "Docker Desktop no arrancó. Ábrelo a mano y vuelve a correr ./instalar.sh"
+        [ "$i" = 90 ] && fallo "$app no arrancó. Ábrelo a mano y vuelve a correr ./instalar.sh"
         sleep 2
       done
     fi
-    aviso "En Docker Desktop → Settings → General activa 'Start Docker Desktop when you sign in'"
-    aviso "y en Resources pon Memory ≥ 4 GB."
+    if [ "$app" = "OrbStack" ]; then
+      aviso "Usando OrbStack. En OrbStack → Settings activa 'Start at login'."
+    else
+      aviso "En Docker Desktop → Settings → General activa 'Start Docker Desktop when you sign in'"
+      aviso "y en Resources pon Memory ≥ 4 GB."
+    fi
   else
     if ! sudo docker compose version >/dev/null 2>&1; then
       for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
