@@ -9,6 +9,8 @@ Clúster PostgreSQL 16 de 3 nodos con **Patroni** (failover automático), **etcd
 
 El plan completo, con la explicación de cada decisión, las pruebas y el guion de la demo, está en [`PLAN_ALTA_DISPONIBILIDAD.md`](PLAN_ALTA_DISPONIBILIDAD.md) (también en [PDF](PLAN_ALTA_DISPONIBILIDAD.pdf)).
 
+**Casos límite** (qué pasa si caen dos nodos, si se duerme una laptop, si se corta la red…): [`EDGE_CASES.md`](EDGE_CASES.md).
+
 **¿Qué falta y por dónde empiezo?** Ver [`GUIA_PENDIENTES.md`](GUIA_PENDIENTES.md) ([PDF](GUIA_PENDIENTES.pdf)): checklist y pasos en orden para dejar todo funcionando en los 3 equipos.
 
 ## Instalación en los 3 equipos
