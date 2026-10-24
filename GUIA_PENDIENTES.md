@@ -204,14 +204,19 @@ Y abrir en el navegador `http://<IP_de_cualquier_nodo>:7000`: en el bloque `prim
 
 Es **el riesgo técnico más importante** y el laboratorio no lo cubre, porque ahí todo corría en la misma arquitectura. Hay que comprobar que PostgreSQL replique bien entre la Mac (ARM) y las PC (x86).
 
+El objetivo es que **un nodo ARM (Mac) y uno x86 (Pop!_OS)** hayan sido primario cada uno, con los demás replicando desde él.
+
 ```bash
-./scripts/pctl.sh list                                            # ver quién es Leader (ej. n2)
-./scripts/pctl.sh switchover --leader n2 --candidate n1 --force   # la Mac pasa a primario
-./scripts/pctl.sh list                                            # n1 Leader, los otros streaming
-./scripts/pctl.sh switchover --leader n1 --candidate n2 --force   # regresar
-./scripts/pctl.sh list
+./scripts/pctl.sh list                  # ver quién es Leader y quién es Sync Standby
+./scripts/pctl.sh switchover --force    # el Sync Standby pasa a primario
+./scripts/pctl.sh list                  # esperar a que los 3 estén running/streaming con lag 0
+# repetir switchover hasta que haya sido primario un nodo de cada arquitectura
 ```
-**Pasa** si en ambos cambios los 3 nodos terminan en `running`/`streaming` con lag 0.
+> **Importante:** con replicación síncrona, Patroni **solo** acepta como nuevo primario a la réplica que en ese momento es `Sync Standby` (si no, responde `412 candidate name does not match with sync_standby`). Es una protección: así nunca se promueve un nodo al que le falten datos confirmados. Por eso el cambio se hace **sin `--candidate`** (Patroni elige a la síncrona) y se repite hasta que el nodo deseado sea `Leader`.
+
+**Pasa** si después de cada cambio los 3 nodos terminan en `running`/`streaming` con lag 0.
+
+> ✔ **Validado el 2026-10-23 en las máquinas reales:** el clúster arrancó con n3 (Mac ARM) como primario y n2 (Pop!_OS x86) replicando desde él. Después n3 → n1 → n2, y con n2 (x86) como primario las dos Mac replicaron con los datos intactos (100 cuentas, suma 1,000,000).
 
 **Si falla** (errores tipo `incompatible` o la Mac no arranca como réplica): aplicar el plan B del **plan §10.6**, que corre el contenedor de la Mac como x86 con Rosetta.
 

@@ -2,7 +2,7 @@
 # Atajo para patronictl dentro del contenedor. Ejemplos:
 #   ./scripts/pctl.sh list
 #   ./scripts/pctl.sh history
-#   ./scripts/pctl.sh switchover --leader n2 --candidate n1 --force
+#   ./scripts/pctl.sh switchover --force          (el nuevo primario es el Sync Standby)
 #   ./scripts/pctl.sh reinit hadb n1 --force
 set -euo pipefail
 source "$(dirname "$0")/comun.sh"

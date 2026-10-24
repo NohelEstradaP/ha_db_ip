@@ -1262,13 +1262,16 @@ Esto es lo que más riesgo técnico tiene, así que se valida ya. En n1 (la Mac)
 ```bash
 docker exec -it patroni psql -U postgres -c "SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();"
 ```
-Debe responder `t` y un LSN que avanza. Luego se fuerza a la Mac como primario y se regresa:
+Debe responder `t` y un LSN que avanza. Luego se cambia el primario hasta que un nodo de cada arquitectura lo haya sido:
 ```bash
-docker exec -it patroni patronictl -c /etc/patroni/patroni.yml switchover --leader n2 --candidate n1 --force
-docker exec -it patroni patronictl -c /etc/patroni/patroni.yml list
-docker exec -it patroni patronictl -c /etc/patroni/patroni.yml switchover --leader n1 --candidate n2 --force
+./scripts/pctl.sh switchover --force    # el Sync Standby pasa a primario
+./scripts/pctl.sh list                  # esperar running/streaming con lag 0; repetir si hace falta
 ```
-Si las dos operaciones terminan con los 3 nodos en `streaming`/`running`, la combinación funciona.
+> **Importante:** con replicación síncrona, Patroni **solo** acepta como nuevo primario a la réplica que en ese momento es `Sync Standby` (si no, responde `412 candidate name does not match with sync_standby`). Es una protección: así nunca se promueve un nodo al que le falten datos confirmados. Por eso el cambio se hace **sin `--candidate`** (Patroni elige a la síncrona) y se repite hasta que el nodo deseado sea `Leader`.
+
+Si cada cambio termina con los 3 nodos en `streaming`/`running`, la combinación funciona.
+
+> ✔ **Resultado real (2026-10-23):** n3 (Mac ARM, OrbStack) arrancó como primario y n2 (Pop!_OS x86) replicó desde él. Después n3 → n1 → n2, y con n2 (x86) como primario las dos Mac replicaron con los datos intactos. La compatibilidad arm64 ↔ x86_64 quedó validada en ambas direcciones.
 
 ### 10.6 Plan B si la Mac no puede replicar con los nodos x86_64
 
@@ -1573,7 +1576,7 @@ docker compose ps
 docker compose logs -f --tail 100 patroni
 
 # Operaciones
-pctl switchover --leader n2 --candidate n1 --force    # cambio planificado
+pctl switchover --force                              # cambio planificado (al Sync Standby)
 pctl failover --candidate n3 --force                  # forzar failover
 pctl reinit hadb n1 --force                           # reconstruir un nodo desde el primario
 pctl restart hadb n1                                  # reiniciar PostgreSQL en un nodo
