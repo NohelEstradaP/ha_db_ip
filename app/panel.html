@@ -324,7 +324,11 @@
     const c = d.carga;
     $("k-cambios").textContent = num(c.cambios_min);
     const okCarga = c.cambios_min != null && c.cambios_min >= c.minimo;
+    const activos = (d.generadores || []).filter((g) => g.hace < 10);
+    const sinCarga = !activos.length;
     $("k-cambios-d").innerHTML = c.cambios_min == null ? "sin datos del primario" :
+      sinCarga && !c.cambios_min ? `<span class="estado-linea medio">⏸ sin carga: no hay generadores activos</span>` :
+      !okCarga && activos.length && Math.max(...activos.map((g) => g.edad)) < 60 ? `<span class="estado-linea medio">⏳ midiendo: la carga empezó hace menos de 60 s</span>` :
       !d.primario.disponible ? `<span class="estado-linea medio">⏸ último valor conocido (hace ${num(c.datos_de_hace)} s)</span>` :
       `<span class="estado-linea ${okCarga ? "ok" : "mal"}">${okCarga ? "✔ cumple" : "✕ bajo"}</span> · mínimo ${c.minimo} · ${num(c.tx_min)} tx`;
 
@@ -498,11 +502,15 @@
     // Umbral mínimo
     g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(90)}" y2="${y(90)}" stroke="var(--critical)" stroke-width="1.5" stroke-dasharray="6 4"/>`;
     g += `<text x="${W - m.r}" y="${y(90) - 6}" text-anchor="end" font-size="11" font-weight="600" fill="var(--text-secondary)">mínimo 90</text>`;
-    // Marcas de failover
-    for (const mk of d.marcas || []) {
+    // Marcas de failover: todas con su línea; la etiqueta solo si no se encima con la anterior
+    // (todas aparecen en el tooltip al pasar el mouse)
+    let ultimaEtiqueta = -Infinity;
+    for (const mk of (d.marcas || []).slice().sort((a, b) => a.t - b.t)) {
       if (mk.t < t0 || mk.t > t1 + 10) continue;
       const xm = x(Math.min(mk.t, t1));
       g += `<line x1="${xm}" x2="${xm}" y1="${m.t}" y2="${H - m.b}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      if (xm - ultimaEtiqueta < 105) continue;
+      ultimaEtiqueta = xm;
       const derecha = xm > W - m.r - 110;   // cerca del borde: la etiqueta va a la izquierda de la línea
       g += `<text x="${derecha ? xm - 4 : xm + 4}" y="${m.t + 10}" text-anchor="${derecha ? "end" : "start"}" font-size="11" fill="var(--text-secondary)">⚡ ${esc(mk.texto)}</text>`;
     }
@@ -529,7 +537,9 @@
       cruz.setAttribute("x1", cx); cruz.setAttribute("x2", cx); cruz.setAttribute("visibility", "visible");
       ph.setAttribute("cx", cx); ph.setAttribute("cy", cy); ph.setAttribute("visibility", "visible");
       tip.style.display = "block";
-      tip.innerHTML = `${horaDe(mejor.t)}–${horaDe(mejor.t + 10).slice(-2)}<br><b>${num(mejor.cambios_min)}</b> cambios/min · ${num(mejor.cambios_min / 18)} tx en 10 s`;
+      const fallas = (d.marcas || []).filter((mk) => mk.t >= mejor.t - 5 && mk.t < mejor.t + 15);
+      tip.innerHTML = `${horaDe(mejor.t)}–${horaDe(mejor.t + 10).slice(-2)}<br><b>${num(mejor.cambios_min)}</b> cambios/min · ${num(mejor.cambios_min / 18)} tx en 10 s` +
+        fallas.map((mk) => `<br>⚡ ${horaDe(mk.t)} · ${esc(mk.texto)}`).join("");
       const izq = Math.min(cx + 12, W - tip.offsetWidth - 4);
       tip.style.left = `${izq}px`; tip.style.top = `${Math.max(0, cy - 48)}px`;
     });

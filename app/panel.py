@@ -145,7 +145,7 @@ class Primario(threading.Thread):
                     " GROUP BY 1 ORDER BY 1", (BALDE, BALDE, VENTANA_SERIE)).fetchall()
                 generadores = c.execute(
                     "SELECT generador, count(*), max(seq), max(seq) - count(*),"
-                    " extract(epoch FROM now() - max(creado))"
+                    " extract(epoch FROM now() - max(creado)), extract(epoch FROM now() - min(creado))"
                     " FROM movimientos GROUP BY generador"
                     " ORDER BY max(creado) DESC LIMIT 8").fetchall()
                 recientes = c.execute(
@@ -164,7 +164,8 @@ class Primario(threading.Thread):
                     "serie": serie(baldes, float(ahora_bd)),
                     "generadores": [
                         {"nombre": g, "filas": n, "ultimo_seq": s, "faltan": f,
-                         "hace": round(float(h), 1)} for g, n, s, f, h in generadores],
+                         "hace": round(float(h), 1), "edad": round(float(e), 1)}
+                        for g, n, s, f, h, e in generadores],
                     "recientes": [
                         {"generador": g, "seq": s, "origen": o, "destino": d, "monto": float(m),
                          "primario": IP_A_NODO.get(p, p), "t": float(t)}
