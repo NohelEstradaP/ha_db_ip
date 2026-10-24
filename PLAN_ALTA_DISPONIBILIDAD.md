@@ -441,6 +441,7 @@ Después, los scripts de `scripts/` cubren el resto:
 | `./scripts/iniciar.sh` | Levanta el nodo, espera el quórum de etcd y el primario (en los 3) | §9, §10, §11 |
 | `./scripts/crear_bd.sh` | Usuario `app`, base `hadb` y esquema (una vez, en cualquiera) | §12 |
 | `./scripts/estado.sh` | Patroni, etcd y quién es primario | §18 |
+| `./scripts/panel.sh` | Panel web en tiempo real (`http://<IP>:8080`) | §13.3 |
 | `./scripts/pctl.sh <args>` | `patronictl` (list, history, switchover, reinit…) | §18 |
 | `source scripts/env_app.sh` | Prepara la terminal para `app/*.py` | §13.2 |
 
@@ -1376,7 +1377,7 @@ Para no repetirlo, guardar las líneas en `scripts/env_app.sh` (sin contraseñas
 | Terminal | Nodo | Comando |
 |----------|------|---------|
 | A | n1, n2, n3 (cada uno) | `python app/generador.py --nombre n1` (y `n2`, `n3` según el nodo) |
-| B | el que se proyecte en la demo | `python app/monitor.py` |
+| B | el que se proyecte en la demo | `./scripts/panel.sh` (panel web, `http://localhost:8080`) o `python app/monitor.py` (terminal) |
 | C | cualquiera | `python app/verificar.py` (cuando se quiera) |
 | D | cualquiera | `watch -n 2 docker exec patroni patronictl -c /etc/patroni/patroni.yml list` |
 
@@ -1460,7 +1461,8 @@ Para no repetirlo, guardar las líneas en `scripts/env_app.sh` (sin contraseñas
 2. Encender todo: `docker compose up -d` en las 3 (si ya estaba, no hace nada).
 3. `patronictl list`: Leader, Sync Standby y Replica con lag 0.
 4. Abrir en la máquina que se proyecta:
-   - Terminal 1: `monitor.py` en pantalla grande.
+   - Navegador: **panel web** (`./scripts/panel.sh` → `http://localhost:8080`) en pantalla grande. Muestra roles, cambios por minuto, suma de saldos, eventos y la duración de cada failover.
+   - Terminal 1 (respaldo): `monitor.py`.
    - Terminal 2: `watch -n 2 ... patronictl list`.
    - Navegador: panel HAProxy `http://<IP>:7000`.
 5. Arrancar los 3 generadores.
@@ -1674,6 +1676,7 @@ Sirve para:
 | `./laboratorio/lab.sh iniciar` | Construye la imagen, levanta los 3 nodos, espera primario y réplicas, y crea la BD |
 | `./laboratorio/lab.sh carga` | 3 generadores a 1 tx/s (logs en `evidencias/lab_generador_n*.log`) |
 | `./laboratorio/lab.sh monitor` | El mismo `monitor.py` del clúster real |
+| `./laboratorio/lab.sh panel` | El panel web en `http://localhost:18080` |
 | `./laboratorio/lab.sh apagar nX` | Apagado brusco (equivale a desconectar la corriente) |
 | `./laboratorio/lab.sh detener nX` | Apagado limpio |
 | `./laboratorio/lab.sh aislar nX` | Quita la red al nodo sin apagarlo (partición) |

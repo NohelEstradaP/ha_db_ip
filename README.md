@@ -47,6 +47,18 @@ python app/monitor.py                  # estado en vivo y cambios por minuto
 python app/verificar.py --esperar      # con la carga detenida: compara los 3 nodos
 ```
 
+## Panel en tiempo real
+
+```bash
+./scripts/panel.sh                     # abrir http://localhost:8080
+```
+Muestra en vivo:
+- el rol de cada nodo, el lag, el timeline, etcd y HAProxy;
+- los cambios por minuto (con la línea del mínimo de 90) y la suma de saldos;
+- los eventos (caídas, failover con su duración, re-sincronización) y los últimos movimientos.
+
+Funciona sin internet. Desde otro equipo o un celular se abre con `http://<IP del equipo>:8080`. Solo lee: no cambia nada en el clúster.
+
 ## Practicar en un solo equipo
 
 `laboratorio/` levanta los 3 nodos en una sola máquina, con la misma configuración, para ensayar fallas sin las 3 PC:
@@ -54,7 +66,7 @@ python app/verificar.py --esperar      # con la carga detenida: compara los 3 no
 ```bash
 ./laboratorio/lab.sh iniciar
 ./laboratorio/lab.sh carga
-./laboratorio/lab.sh monitor            # en otra terminal
+./laboratorio/lab.sh panel              # http://localhost:18080
 ./laboratorio/lab.sh apagar n1          # o: detener n1 / aislar n1
 ./laboratorio/lab.sh encender n1
 ./laboratorio/lab.sh parar-carga && ./laboratorio/lab.sh verificar
@@ -70,6 +82,6 @@ python app/verificar.py --esperar      # con la carga detenida: compara los 3 no
 | `patroni/` | Imagen PostgreSQL 16 + Patroni y su configuración |
 | `haproxy/` | Puerto 5000 → primario, 5001 → réplicas, 7000 → panel |
 | `sql/esquema.sql` | Cuentas y movimientos (la suma de saldos siempre es 1,000,000) |
-| `app/` | Generador de carga, monitor y verificador de integridad |
-| `scripts/` | Iniciar, estado, crear BD, patronictl, prueba de puertos |
+| `app/` | Generador de carga, monitor, verificador de integridad y panel web (`panel.py`) |
+| `scripts/` | Iniciar, estado, crear BD, panel, patronictl, prueba de puertos |
 | `laboratorio/` | Los 3 nodos en una sola máquina |

@@ -15,6 +15,7 @@ Esta guía es la versión corta y en orden de lo que falta. La explicación de c
 - [x] Aplicación de prueba: generador de carga, monitor y verificador de integridad
 - [x] Instalador `instalar.sh` para macOS y Pop!_OS
 - [x] Scripts: `iniciar.sh`, `crear_bd.sh`, `estado.sh`, `pctl.sh`, `env_app.sh`, `probar_puertos.sh`
+- [x] Panel web en tiempo real (`./scripts/panel.sh`), probado en el laboratorio con failover y reingreso
 - [x] Laboratorio local (3 nodos en una sola máquina), probado en la Mac:
   - [x] Failover al apagar el primario: unos 22 s
   - [x] Partición de red del primario: unos 27 s, sin dos primarios
@@ -244,7 +245,26 @@ python app/monitor.py
 ```
 Después de un minuto debe mostrar unas **180 transacciones/min**, **540 cambios/min [OK]** y **Suma 1,000,000.00 [OK]**.
 
-### 9.3 Verificación de integridad
+### 9.3 Panel web en tiempo real (recomendado para la demo)
+
+En uno o dos equipos:
+```bash
+cd ~/hadb
+./scripts/panel.sh
+```
+Abrir `http://localhost:8080`, o desde otro equipo o un celular `http://<IP del equipo>:8080`. Si `ufw` está activo en Pop!_OS, permitir el puerto: `sudo ufw allow 8080/tcp`.
+
+| Parte del panel | Qué muestra |
+|-----------------|-------------|
+| Encabezado | Sano / Degradado / **Sin primario** |
+| Indicadores | Cambios por minuto (✔ si ≥ 90), primario actual, suma de saldos y **duración del último failover** |
+| Tarjetas de nodo | Rol, estado, timeline, lag, filas, suma, etcd y a quién manda HAProxy las escrituras |
+| Replicación | Dibujo de quién replica a quién (síncrona / asíncrona) |
+| Gráfica | Cambios por minuto de los últimos 10 min, línea del mínimo de 90 y marca ⚡ en cada failover |
+| Eventos | Caídas, cambios de rol, failover con su duración y re-sincronización |
+| Generadores / movimientos | Filas, `seq`, faltantes y en qué nodo se escribió cada movimiento |
+
+### 9.4 Verificación de integridad
 
 ```bash
 cd ~/hadb && source scripts/env_app.sh
@@ -262,7 +282,7 @@ python app/verificar.py --esperar    # → RESULTADO: OK. 3 nodos con datos idé
 1. Clúster sano (`./scripts/estado.sh`) y los 3 generadores corriendo al menos 2 minutos.
 2. Anotar la hora (`date +%T`) y quién es el primario.
 3. Provocar la falla (tabla de abajo).
-4. Mirar el monitor: anotar cuándo vuelve a haber primario y confirmar que la suma sigue en 1,000,000.
+4. Mirar el panel: muestra solo cuánto duró el failover ("Último failover") y si la suma sigue en 1,000,000.
 5. Dejar el nodo caído 2 minutos: los cambios/min deben seguir por encima de 90.
 6. Restaurar el nodo y esperar a que vuelva a `streaming` (`./scripts/estado.sh`).
 7. Ctrl+C en los generadores y correr `python app/verificar.py --esperar`.
@@ -323,7 +343,7 @@ Además: capturas del monitor antes, durante y después, y un video de la P3 o l
 **30 minutos antes**
 1. Conectar los 3 a la red y probar `tailscale ping` entre todos.
 2. `./scripts/iniciar.sh` en los 3 (si ya estaba corriendo, solo muestra el estado).
-3. Abrir el monitor en **dos** equipos, porque pueden apagar el que estás proyectando.
+3. Abrir el panel (`./scripts/panel.sh`) en **dos** equipos, o en uno y verlo desde un celular, porque pueden apagar el que estás proyectando.
 4. Abrir el panel de HAProxy `http://<IP>:7000`.
 5. Arrancar los 3 generadores.
 6. Mac: dejar `caffeinate -dimsu` corriendo en una terminal y **no cerrar la tapa**.
