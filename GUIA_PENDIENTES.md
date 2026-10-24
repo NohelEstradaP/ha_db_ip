@@ -321,10 +321,31 @@ python app/verificar.py --esperar > evidencias/pX_verificar.txt
 ```
 Además: capturas del monitor antes, durante y después, y un video de la P3 o la P4 (Mac: QuickTime; Pop!_OS: `Ctrl+Alt+Shift+R`). Los CSV del generador y del monitor ya quedan en `evidencias/`.
 
-### 10.4 Tabla para llenar
+### 10.4 Resultados (23 de octubre de 2026, máquinas reales)
 
-| Prueba | Hora | Primario antes | Nodo afectado | Nuevo primario a las | Tiempo sin primario (s) | Suma OK | Faltan 0 | Re-sincronizado a las | Verificador |
-|--------|------|----------------|---------------|----------------------|-------------------------|---------|----------|-----------------------|-------------|
+Hechas desde n1 con `docker kill` (equivale a cortar la corriente del nodo) y `tailscale down` (partición), con un generador a 180 cambios/min:
+
+| Prueba | Nodo afectado (rol) | Tiempo sin primario | Suma OK | Faltan | Re-sincronización |
+|--------|---------------------|---------------------|---------|--------|-------------------|
+| P8 switchover | n2 (primario) → n1 | 3,0 s | ✔ | 0 | 3 nodos sanos en 14 s |
+| P9 `stop patroni` | n1 (primario) | 3,0 s | ✔ | 0 | 3 s |
+| P3 caída brusca | n1 (primario) | **26,1 s** | ✔ | 0 | `pg_rewind`, sano en 45 s |
+| P2 caída brusca | n1 (réplica) | 0 s | ✔ | 0 | 4 s |
+| P4 partición | n1 (primario) | se degradó solo a los 11 s; n3 primario a los 22 s | ✔ | 0 | réplica, lag 0 |
+| P7 10 min caído | n1 (réplica) | 0 s | ✔ | 0 | se puso al día con el WAL (600 transacciones atrasadas) en 5 s |
+
+**Verificación final:** 3 nodos con datos idénticos, 1,301 movimientos, suma 1,000,000, 0 faltantes. Las 1,301 transacciones que el generador recibió como confirmadas están todas en la base: **ninguna se perdió**. Hubo 8 reintentos, uno por cada cambio de primario, sin duplicados.
+
+**Pendientes (requieren estar frente a n2 o n3):**
+
+| Prueba | Hora | Primario antes | Nodo afectado | Nuevo primario a las | Tiempo sin primario (s) | Suma OK | Faltan 0 | Re-sincronizado a las |
+|--------|------|----------------|---------------|----------------------|-------------------------|---------|----------|-----------------------|
+| P1 apagado normal | | | | | | | | |
+| P3 con apagado físico real | | | | | | | | |
+| P5 réplica sin red | | | | | | | | |
+| P6 `sudo reboot` | | | | | | | | |
+
+--------|------|----------------|---------------|----------------------|-------------------------|---------|----------|-----------------------|-------------|
 | P1 | | | | | | | | | |
 | P2 | | | | | | | | | |
 | P3 | | | | | | | | | |
