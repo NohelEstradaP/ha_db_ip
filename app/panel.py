@@ -4,7 +4,8 @@
 Consulta cada segundo a los 3 nodos (API de Patroni, etcd, HAProxy y PostgreSQL)
 y al primario (vía HA_DSN) y sirve una página que se actualiza sola (consulta /api/estado cada segundo):
     http://<IP de este equipo>:8080
-Solo lee: no cambia nada en el clúster.
+Solo lee, salvo el botón "Hacer primario" (switchover planificado vía la API de Patroni),
+que se puede desactivar con --solo-lectura.
 """
 import argparse
 import csv
@@ -13,6 +14,7 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import deque
 from datetime import datetime
@@ -217,6 +219,9 @@ class Agregador(threading.Thread):
         self.marcas = deque(maxlen=20)   # momentos de failover para la gráfica
         self.regreso = {}                # nodo -> momento en que volvió (para no repetir avisos al reincorporarse)
         self.conocidos = set()           # nodos que ya se vieron vivos alguna vez
+        self.cambio = None               # cambio de primario en curso o el último terminado
+        self.candado = threading.Lock()
+        self.acciones = True             # False con --solo-lectura
         self.evento("info", "Panel iniciado")
 
     def evento(self, tipo, texto):
@@ -315,6 +320,8 @@ class Agregador(threading.Thread):
             "generadores": p.get("generadores", []),
             "recientes": p.get("recientes", []),
             "eventos": list(self.eventos)[:40],
+            "cambio": self.cambio,
+            "acciones": self.acciones,
         })
 
     def detectar_eventos(self, nodos, disponible, primario_nodo, timeline, p, t):
@@ -373,6 +380,88 @@ class Agregador(threading.Thread):
             self.evento("error", f"¡La suma de saldos cambió! {p.get('suma')}")
 
 
+def switchover(lider, candidato):
+    """Pide a Patroni un switchover planificado; devuelve el texto de la respuesta."""
+    cuerpo = json.dumps({"leader": lider, "candidate": candidato}).encode()
+    req = urllib.request.Request(f"http://{NODOS[lider]}:8008/switchover", data=cuerpo, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read().decode().strip()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Patroni respondió {e.code}: {e.read().decode().strip()}")
+
+
+def roles_cluster():
+    """(líder, sync_standby, {nombre: estado}) según /cluster, o None si nadie responde."""
+    c = consultar_cluster()
+    if not c:
+        return None
+    miembros = c.get("members", [])
+    lider = next((m["name"] for m in miembros if m.get("role") == "leader"), None)
+    sync = next((m["name"] for m in miembros if m.get("role") == "sync_standby"), None)
+    return lider, sync, {m["name"]: m.get("state") for m in miembros}
+
+
+class CambioPrimario(threading.Thread):
+    """Lleva el primario a `destino`. Con replicación síncrona Patroni solo promueve al Sync Standby,
+    así que si el destino no lo es se hacen switchovers intermedios hasta que le toque."""
+
+    MAX_PASOS = 4
+
+    def __init__(self, agregador, destino):
+        super().__init__(daemon=True)
+        self.ag, self.destino = agregador, destino
+        self.inicio = ahora()
+        self.ag.cambio = {"destino": destino, "estado": "en_curso", "pasos": [], "inicio": self.inicio,
+                          "mensaje": "Preparando…"}
+
+    def actualizar(self, **campos):
+        nuevo = dict(self.ag.cambio)
+        nuevo.update(campos)
+        self.ag.cambio = nuevo
+
+    def esperar_sano(self, lider_esperado, limite=120):
+        fin = ahora() + limite
+        while ahora() < fin:
+            r = roles_cluster()
+            if r:
+                lider, sync, estados = r
+                # Basta con el nuevo primario corriendo y una réplica síncrona en streaming
+                if lider == lider_esperado and sync and estados.get(lider) == "running" \
+                        and estados.get(sync) == "streaming":
+                    return r
+            time.sleep(2)
+        raise RuntimeError(f"el clúster no quedó sano con {lider_esperado} como primario en {limite} s")
+
+    def run(self):
+        try:
+            for _ in range(self.MAX_PASOS):
+                r = roles_cluster()
+                if not r:
+                    raise RuntimeError("ningún nodo de Patroni responde")
+                lider, sync, _estados = r
+                if lider == self.destino:
+                    break
+                if not sync:
+                    self.actualizar(mensaje="Esperando a que haya réplica síncrona…")
+                    lider, sync, _estados = self.esperar_sano(lider)
+                pasos = self.ag.cambio["pasos"] + [f"{lider} → {sync}"]
+                self.actualizar(pasos=pasos, mensaje=f"Paso {len(pasos)}: switchover {lider} → {sync}")
+                self.ag.evento("rol", f"Switchover solicitado desde el panel: {lider} → {sync}")
+                switchover(lider, sync)
+                self.esperar_sano(sync)
+            else:
+                raise RuntimeError(f"{self.destino} no llegó a primario en {self.MAX_PASOS} pasos")
+            duracion = round(ahora() - self.inicio, 1)
+            self.actualizar(estado="listo", fin=ahora(),
+                            mensaje=f"{self.destino} es el primario ({len(self.ag.cambio['pasos'])} cambio(s), {duracion} s)")
+            self.ag.evento("failover", f"{self.destino} es el primario por solicitud del panel ({duracion} s)")
+        except Exception as e:
+            self.actualizar(estado="error", fin=ahora(), mensaje=primera_linea(e))
+            self.ag.evento("error", f"No se pudo cambiar el primario a {self.destino}: {primera_linea(e)}")
+
+
 class Manejador(BaseHTTPRequestHandler):
     agregador = None
 
@@ -396,10 +485,43 @@ class Manejador(BaseHTTPRequestHandler):
         else:
             self.enviar(404, "text/plain", b"no encontrado")
 
+    def responder(self, codigo, datos):
+        self.enviar(codigo, "application/json", json.dumps(datos).encode())
+
+    def do_POST(self):
+        if self.path != "/api/primario":
+            return self.enviar(404, "text/plain", b"no encontrado")
+        ag = self.agregador
+        if not ag.acciones:
+            return self.responder(403, {"error": "El panel se inició con --solo-lectura"})
+        try:
+            largo = int(self.headers.get("Content-Length", 0))
+            destino = json.loads(self.rfile.read(largo) or b"{}").get("destino")
+        except ValueError:
+            return self.responder(400, {"error": "Solicitud inválida"})
+        if destino not in NODOS:
+            return self.responder(400, {"error": f"Nodo desconocido: {destino}"})
+        with ag.candado:
+            if ag.cambio and ag.cambio.get("estado") == "en_curso":
+                return self.responder(409, {"error": "Ya hay un cambio de primario en curso"})
+            r = roles_cluster()
+            if not r:
+                return self.responder(503, {"error": "Ningún nodo de Patroni responde"})
+            lider, sync, estados = r
+            if lider == destino:
+                return self.responder(409, {"error": f"{destino} ya es el primario"})
+            if estados.get(destino) not in ("running", "streaming"):
+                return self.responder(409, {"error": f"{destino} no está disponible ({estados.get(destino, 'sin respuesta')})"})
+            if destino != sync and not (len(estados) == 3 and all(e in ("running", "streaming") for e in estados.values())):
+                return self.responder(409, {"error": "Con un nodo caído solo se puede pasar el primario a la réplica síncrona"})
+            CambioPrimario(ag, destino).start()
+        return self.responder(202, {"ok": True})
+
 
 def main():
     ap = argparse.ArgumentParser(description="Panel web en tiempo real del clúster")
     ap.add_argument("--puerto", type=int, default=8080)
+    ap.add_argument("--solo-lectura", action="store_true", help="oculta el botón para cambiar el primario")
     args = ap.parse_args()
 
     nodos = [Nodo(n, ip) for n, ip in NODOS.items()]
@@ -407,6 +529,7 @@ def main():
     for hilo in nodos + [primario]:
         hilo.start()
     agregador = Agregador(nodos, primario)
+    agregador.acciones = not args.solo_lectura
     agregador.start()
 
     Manejador.agregador = agregador

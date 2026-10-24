@@ -170,6 +170,28 @@
   }
   footer { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 
+  .acciones-nodo { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid); flex-wrap: wrap; }
+  .acciones-nodo .nota { color: var(--text-muted); font-size: 12px; }
+  button.accion {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--series-1);
+    background: transparent; color: var(--series-1);
+  }
+  button.accion:hover { background: var(--accent-soft); }
+  button.accion.confirmar { background: var(--series-1); color: #fff; }
+  button.accion.secundario { border-color: var(--border); color: var(--text-secondary); }
+  button.accion:disabled { opacity: .5; cursor: default; }
+  .cambio {
+    display: none; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 14px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface-1); font-size: 13.5px;
+  }
+  .cambio.en_curso { border-color: var(--series-1); background: var(--accent-soft); }
+  .cambio.listo { border-color: var(--good); background: var(--good-soft); }
+  .cambio.error { border-color: var(--critical); background: var(--critical-soft); }
+  .cambio .giro { width: 14px; height: 14px; border: 2px solid var(--series-1); border-right-color: transparent; border-radius: 50%; animation: giro .8s linear infinite; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+  .cambio .pasos { color: var(--text-secondary); font-family: var(--mono); font-size: 12.5px; }
+
   .kpis > *, .nodos > *, .fila2 > *, .fila3 > * { min-width: 0; }
   #generadores, #recientes, #tabla-grafica { overflow-x: auto; }
   @media (max-width: 980px) {
@@ -218,6 +240,8 @@
     </div>
   </section>
 
+  <div class="cambio" id="cambio" role="status" aria-live="polite"></div>
+
   <section class="nodos" id="nodos"></section>
 
   <section class="fila2">
@@ -259,7 +283,7 @@
     <div id="recientes"></div>
   </section>
 
-  <footer>Datos de la API de Patroni, etcd, HAProxy y PostgreSQL de cada nodo, actualizados cada segundo. El panel solo lee: no modifica nada.</footer>
+  <footer>Datos de la API de Patroni, etcd, HAProxy y PostgreSQL de cada nodo, actualizados cada segundo. El panel solo lee, salvo el botón «Hacer primario», que pide un switchover planificado a Patroni.</footer>
 </div>
 
 <script>
@@ -348,9 +372,65 @@
           <dt>etcd</dt><dd>${n.etcd ? '<span class="ok">✔ sano</span>' : '<span class="mal">✕ sin respuesta</span>'}</dd>
           <dt>HAProxy escribe en</dt><dd>${haproxy}</dd>
         </dl>
+        ${botonPrimario(d, n)}
       </article>`;
     }).join("");
   }
+
+  // ---- Cambiar el primario desde el panel
+  let confirmando = null;   // { nodo, hasta }
+  let errorCambio = null;   // mensaje si la solicitud fue rechazada
+
+  function botonPrimario(d, n) {
+    if (!d.acciones || !n.vivo || n.rol === "primario") return "";
+    const enCurso = d.cambio && d.cambio.estado === "en_curso";
+    const directo = n.rol === "sincrona";
+    const nota = directo ? "cambio directo (es la réplica síncrona)" : "pasa primero por la réplica síncrona";
+    if (confirmando && confirmando.nodo === n.nombre && Date.now() < confirmando.hasta) {
+      return `<div class="acciones-nodo">
+        <button class="accion confirmar" data-confirmar="${esc(n.nombre)}" type="button">Confirmar: ${esc(n.nombre)} primario</button>
+        <button class="accion secundario" data-cancelar type="button">Cancelar</button>
+        <span class="nota">las escrituras se pausan unos segundos</span></div>`;
+    }
+    return `<div class="acciones-nodo">
+      <button class="accion" data-primario="${esc(n.nombre)}" type="button" ${enCurso ? "disabled" : ""}>★ Hacer primario</button>
+      <span class="nota">${nota}</span></div>`;
+  }
+
+  function pintarCambio(d) {
+    const el = $("cambio");
+    const c = d.cambio;
+    if (errorCambio) {
+      el.className = "cambio error"; el.style.display = "flex";
+      el.innerHTML = `<span>✕</span><span>${esc(errorCambio)}</span>`;
+      return;
+    }
+    if (!c || (c.estado !== "en_curso" && d.generado - (c.fin || 0) > 60)) { el.style.display = "none"; return; }
+    el.className = `cambio ${c.estado}`; el.style.display = "flex";
+    const icono = c.estado === "en_curso" ? '<span class="giro"></span>' : c.estado === "listo" ? "<span>✔</span>" : "<span>✕</span>";
+    const titulo = c.estado === "en_curso" ? `Cambiando el primario a ${esc(c.destino)}…` : c.estado === "listo" ? "Cambio de primario terminado:" : `No se pudo cambiar el primario a ${esc(c.destino)}:`;
+    el.innerHTML = `${icono}<span><b>${titulo}</b> ${esc(c.mensaje)}</span>${c.pasos.length ? `<span class="pasos">${c.pasos.map(esc).join(" · ")}</span>` : ""}`;
+  }
+
+  $("nodos").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    errorCambio = null;
+    if (b.dataset.primario) {
+      confirmando = { nodo: b.dataset.primario, hasta: Date.now() + 8000 };
+    } else if (b.dataset.cancelar !== undefined) {
+      confirmando = null;
+    } else if (b.dataset.confirmar) {
+      const destino = b.dataset.confirmar;
+      confirmando = null;
+      try {
+        const r = await fetch("api/primario", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ destino }) });
+        if (!r.ok) errorCambio = (await r.json().catch(() => ({}))).error || `Error ${r.status}`;
+      } catch (e) { errorCambio = "No se pudo contactar al panel"; }
+      if (errorCambio) setTimeout(() => { errorCambio = null; }, 10000);
+    }
+    if (ultima) { pintarNodos(ultima); pintarCambio(ultima); }
+  });
 
   // ---- Topología (triángulo de 3 nodos con flechas desde el primario)
   function pintarTopologia(d) {
@@ -491,6 +571,7 @@
   function pintar(d) {
     ultima = d;
     pintarResumen(d);
+    pintarCambio(d);
     pintarNodos(d);
     pintarTopologia(d);
     dibujarGrafica(d);
