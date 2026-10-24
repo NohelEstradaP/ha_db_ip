@@ -336,8 +336,11 @@ paso_firewall() {
 paso_python() {
   info "Entorno Python de la aplicación"
   [ -d .venv ] || python3 -m venv .venv
-  .venv/bin/pip install -q --upgrade pip >/dev/null
-  .venv/bin/pip install -q -r app/requirements.txt
+  if ! .venv/bin/python -c 'import psycopg' 2>/dev/null; then
+    # Tiempo de espera y reintentos altos: en redes lentas o de universidad pip corta a los 15 s
+    .venv/bin/pip install -q --disable-pip-version-check --timeout 120 --retries 10 -r app/requirements.txt \
+      || fallo "no se pudo descargar psycopg (red lenta o bloqueada). Vuelve a correr ./instalar.sh o prueba otra red"
+  fi
   ok "$(.venv/bin/python -c 'import psycopg; print("psycopg", psycopg.__version__)')"
 }
 
