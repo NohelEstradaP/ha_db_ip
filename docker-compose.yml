@@ -14,7 +14,7 @@ services:
       - --listen-peer-urls=http://0.0.0.0:2380
       - --initial-advertise-peer-urls=http://${NODE_IP}:2380
       - --initial-cluster=n1=http://${N1_IP}:2380,n2=http://${N2_IP}:2380,n3=http://${N3_IP}:2380
-      - --initial-cluster-state=new
+      - --initial-cluster-state=${ETCD_ESTADO_INICIAL:-new}   # iniciar.sh usa 'existing' al reincorporar un nodo
       - --initial-cluster-token=hadb-etcd
       - --heartbeat-interval=250
       - --election-timeout=2500
