@@ -5,3 +5,4 @@ __pycache__/
 evidencias/
 docker-compose.override.yml
 .DS_Store
+pass.txt
