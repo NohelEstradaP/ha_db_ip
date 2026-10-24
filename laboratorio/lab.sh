@@ -5,6 +5,7 @@
 #   ./laboratorio/lab.sh estado           patronictl list
 #   ./laboratorio/lab.sh carga            arranca 3 generadores (1 tx/s cada uno)
 #   ./laboratorio/lab.sh monitor          monitor en vivo (Ctrl+C para salir)
+#   ./laboratorio/lab.sh panel            panel web en tiempo real: http://localhost:18080
 #   ./laboratorio/lab.sh apagar n1        apagado brusco del nodo (como desconectar la corriente)
 #   ./laboratorio/lab.sh detener n1       apagado limpio del nodo
 #   ./laboratorio/lab.sh aislar n1        lo deja sin red (partición), sigue encendido
@@ -128,6 +129,16 @@ case "$cmd" in
     ;;
   parar-carga) parar_carga; echo "generadores detenidos" ;;
   monitor)   docker exec -it lab-app python app/monitor.py ;;
+  panel)
+    dc up -d app >/dev/null 2>&1
+    if ! curl -s -o /dev/null -m 2 http://localhost:18080/api/estado; then
+      # esperar a que el contenedor termine de instalar psycopg
+      for _ in $(seq 1 30); do docker exec lab-app python -c "import psycopg" 2>/dev/null && break; sleep 2; done
+      docker exec -d lab-app sh -c "python -u app/panel.py > evidencias/lab_panel.log 2>&1"
+      sleep 2
+    fi
+    echo "Panel: http://localhost:18080"
+    ;;
   verificar) docker exec lab-app python app/verificar.py --esperar ;;
   apagar)
     ip_de "$nodo" >/dev/null
@@ -157,5 +168,5 @@ case "$cmd" in
     ;;
   logs)      ip_de "$nodo" >/dev/null; dc logs --tail 60 "$nodo-patroni" ;;
   destruir)  dc down -v --remove-orphans ;;
-  *)         sed -n '2,17p' "$0"; exit 1 ;;
+  *)         sed -n '2,18p' "$0"; exit 1 ;;
 esac
