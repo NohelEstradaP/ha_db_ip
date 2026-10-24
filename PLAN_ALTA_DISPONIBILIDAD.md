@@ -438,10 +438,11 @@ Después, los scripts de `scripts/` cubren el resto:
 | Script | Uso | Sección |
 |--------|-----|---------|
 | `./scripts/probar_puertos.sh` | Conectividad entre los 3 nodos | §7.3 |
-| `./scripts/iniciar.sh` | Levanta el nodo, espera el quórum de etcd y el primario (en los 3) | §9, §10, §11 |
+| `./scripts/iniciar.sh` | Levanta el nodo, espera quórum, primario y que el nodo esté sincronizado. Si el nodo fue reinstalado, lo reincorpora solo a etcd | §9, §10, §11 |
 | `./scripts/crear_bd.sh` | Usuario `app`, base `hadb` y esquema (una vez, en cualquiera) | §12 |
 | `./scripts/estado.sh` | Patroni, etcd y quién es primario | §18 |
-| `./scripts/panel.sh` | Panel web en tiempo real (`http://<IP>:8080`), con botón para elegir el primario | §13.3 |
+| `./scripts/panel.sh` | Panel web en tiempo real (`http://<IP>:8080`), con botón para elegir el primario; `--fondo` para segundo plano | §13.3 |
+| `./scripts/carga.sh iniciar` | Generador de este equipo en segundo plano (`detener`, `estado`) | §13.3 |
 | `./scripts/pctl.sh <args>` | `patronictl` (list, history, switchover, reinit…) | §18 |
 | `source scripts/env_app.sh` | Prepara la terminal para `app/*.py` | §13.2 |
 

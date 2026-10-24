@@ -43,9 +43,10 @@ Se puede volver a correr sin problema: salta lo que ya está hecho.
 ## Carga, monitoreo e integridad
 
 ```bash
+./scripts/carga.sh iniciar             # generador de ESTE equipo en segundo plano (detener / estado)
+./scripts/panel.sh --fondo             # panel en segundo plano en :8080 (--detener)
 source scripts/env_app.sh
-python app/generador.py --nombre n1    # en cada equipo, con su nombre
-python app/monitor.py                  # estado en vivo y cambios por minuto
+python app/monitor.py                  # estado en vivo en la terminal
 python app/verificar.py --esperar      # con la carga detenida: compara los 3 nodos
 ```
 
@@ -62,6 +63,20 @@ Muestra en vivo:
 Funciona sin internet. Desde otro equipo o un celular se abre con `http://<IP del equipo>:8080`.
 
 Cada tarjeta de nodo tiene un botón **★ Hacer primario** (pide confirmación). Con replicación síncrona Patroni solo promueve a la réplica síncrona; si eliges otro nodo, el panel hace los cambios intermedios solo y muestra el avance. Para un panel que solo mire, sin botones: `./scripts/panel.sh --solo-lectura`.
+
+## Reinstalar o reconfigurar una PC
+
+Todo está en este repositorio salvo el `.env` de cada equipo, que tiene las IP y las 4 contraseñas. **Guarda las contraseñas en un lugar seguro**: son lo único que hay que escribir a mano.
+
+1. **Si la PC se formateó o Tailscale se reinstaló:** Tailscale le da una IP nueva. Para conservar la anterior y no tocar nada en los otros equipos, entra a https://login.tailscale.com/admin/machines, **borra la máquina vieja** y en la nueva usa **⋯ → Edit machine IPv4** para ponerle la IP que tenía.
+2. **Instalar:**
+   ```bash
+   git clone https://github.com/NohelEstradaP/ha_db_ip.git ~/hadb && cd ~/hadb
+   ./instalar.sh
+   ```
+   Responde el nodo (`n1`/`n2`/`n3`), las mismas 3 IP, **`n`** a "¿Es el PRIMER equipo?" y pega las 4 contraseñas. Al final responde **S** a "¿Levantar ahora este nodo?".
+3. **Listo.** `iniciar.sh` detecta que el clúster ya existe: retira de etcd el miembro viejo de ese nodo, lo vuelve a agregar y PostgreSQL se copia solo desde el primario. Termina cuando el nodo está sincronizado (unos 30 s; probado borrando todos los datos de n1).
+4. **Opcional:** `./scripts/carga.sh iniciar` y `./scripts/panel.sh --fondo`.
 
 ## Practicar en un solo equipo
 
@@ -87,5 +102,5 @@ Cada tarjeta de nodo tiene un botón **★ Hacer primario** (pide confirmación)
 | `haproxy/` | Puerto 5000 → primario, 5001 → réplicas, 7000 → panel |
 | `sql/esquema.sql` | Cuentas y movimientos (la suma de saldos siempre es 1,000,000) |
 | `app/` | Generador de carga, monitor, verificador de integridad y panel web (`panel.py`) |
-| `scripts/` | Iniciar, estado, crear BD, panel, patronictl, prueba de puertos |
+| `scripts/` | Iniciar (con reincorporación automática), estado, crear BD, carga, panel, patronictl, prueba de puertos |
 | `laboratorio/` | Los 3 nodos en una sola máquina |

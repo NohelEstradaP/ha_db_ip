@@ -97,8 +97,9 @@ Qué pasa en situaciones poco comunes, si ya se probó y qué hacer.
 | 6.3 | `pip` corta la descarga en una red lenta | Timeout a los 15 s | ✔ ocurrió | El instalador ya usa `--timeout 120 --retries 10` |
 | 6.4 | Proxy de la red bloquea los repositorios de Debian (403) | Falla la construcción de la imagen de Patroni | ✔ ocurrió | Cambiar de red y volver a correr el instalador |
 | 6.5 | Contraseñas distintas entre nodos | `password authentication failed` y la réplica no se une | ⚠ | Las 4 contraseñas iguales en los 3 `.env`, luego `reinit` |
-| 6.6 | Se borra el volumen de etcd de **un** nodo | Ese etcd intenta crear un clúster nuevo: `cluster ID mismatch` | ⚠ | `etcdctl member remove` + `member add` y arrancarlo con `--initial-cluster-state=existing`, o reconstruir etcd en los 3 (plan §6.4) |
-| 6.7 | `docker compose down -v` en un nodo | Borra sus datos: PostgreSQL se recopia solo, pero etcd cae en 6.6 | ⚠ | No usar `-v` salvo para empezar desde cero en los 3 |
+| 6.6 | Se borra el volumen de etcd de **un** nodo (o se reinstala la PC) | Si arrancara como clúster nuevo chocaría (`cluster ID mismatch`). **`iniciar.sh` lo resuelve solo**: retira el miembro viejo, lo vuelve a agregar y arranca como `existing` | ✔ automatizado (probado 2 veces en n1) | `./scripts/iniciar.sh` |
+| 6.7 | `docker compose down -v` en un nodo | Borra sus datos; con `./scripts/iniciar.sh` vuelve solo: etcd como en 6.6 y PostgreSQL se copia desde el primario (24 s en la prueba) | ✔ automatizado | Nunca en el **primario** sin antes moverlo (botón ★ del panel) |
+| 6.11 | Una PC reinstalada recibe otra IP de Tailscale | Las IP del clúster ya no coinciden | ⚠ | Tailscale admin: borrar la máquina vieja y **Edit machine IPv4** en la nueva con la IP anterior |
 | 6.8 | Relojes desincronizados entre equipos | No afecta el failover (etcd usa sus propios tiempos), pero sí las horas mostradas | ⚠ | NTP activado en los 3 |
 | 6.9 | Usuario de Pop!_OS fuera del grupo `docker` | `docker` pide `sudo` | ✔ | Cerrar sesión y volver a entrar; los scripts usan `sudo` si hace falta |
 | 6.10 | Correr el laboratorio y el clúster real en la misma Mac | No chocan los puertos (17000/18080 contra los reales), pero suman memoria | ➖ | `./laboratorio/lab.sh destruir` cuando no se use |

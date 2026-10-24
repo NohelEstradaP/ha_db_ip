@@ -37,7 +37,7 @@ Esta guía es la versión corta y en orden de lo que falta. La explicación de c
 | 10 | Pruebas de falla P1–P9 con evidencias | Los 3 | [§10](#10-paso-7-pruebas-de-falla) |
 | 11 | Ensayar la demo y preparar la red de respaldo | Los 3 | [§11](#11-paso-8-preparar-la-demo) |
 | 12 | Escribir el informe | n/a | [§12](#12-paso-9-informe) |
-| 13 | Borrar el laboratorio de la Mac cuando ya no se use | n1 | [§14](#14-limpieza) |
+| 13 | Borrar el laboratorio de la Mac cuando ya no se use | n1 | [§15](#15-limpieza) |
 
 ---
 
@@ -234,13 +234,13 @@ Esperado: `cuentas: 100, suma: 1000000.00`. Si se vuelve a correr, no hace nada,
 
 ## 9. Paso 6: carga, monitor y verificación
 
-### 9.1 En cada equipo, una terminal con el generador
+### 9.1 En cada equipo, el generador
 
 ```bash
 cd ~/hadb
-source scripts/env_app.sh
-python app/generador.py --nombre n1      # n2 / n3 según el equipo
+./scripts/carga.sh iniciar       # en segundo plano, con el nombre del nodo; también: detener / estado
 ```
+O en primer plano, para ver cada transacción: `source scripts/env_app.sh && python app/generador.py --nombre n1` (n2 / n3 según el equipo).
 
 ### 9.2 En el equipo que se proyecte, otra terminal con el monitor
 
@@ -411,7 +411,21 @@ Estructura y lista de evidencias en el **plan §16**. Ya hay material:
 
 ---
 
-## 14. Limpieza
+## 14. Reinstalar o reconfigurar una PC
+
+Todo está en este repositorio salvo el `.env` de cada equipo, que tiene las IP y las 4 contraseñas. **Guarda las contraseñas en un lugar seguro**: son lo único que hay que escribir a mano.
+
+1. **Si la PC se formateó o Tailscale se reinstaló:** Tailscale le da una IP nueva. Para conservar la anterior y no tocar nada en los otros equipos, entra a https://login.tailscale.com/admin/machines, **borra la máquina vieja** y en la nueva usa **⋯ → Edit machine IPv4** para ponerle la IP que tenía.
+2. **Instalar:**
+   ```bash
+   git clone https://github.com/NohelEstradaP/ha_db_ip.git ~/hadb && cd ~/hadb
+   ./instalar.sh
+   ```
+   Responde el nodo (`n1`/`n2`/`n3`), las mismas 3 IP, **`n`** a "¿Es el PRIMER equipo?" y pega las 4 contraseñas. Al final responde **S** a "¿Levantar ahora este nodo?".
+3. **Listo.** `iniciar.sh` detecta que el clúster ya existe: retira de etcd el miembro viejo de ese nodo, lo vuelve a agregar y PostgreSQL se copia solo desde el primario. Termina cuando el nodo está sincronizado (unos 30 s; probado borrando todos los datos de n1).
+4. **Opcional:** `./scripts/carga.sh iniciar` y `./scripts/panel.sh --fondo`.
+
+## 15. Limpieza
 
 - **Laboratorio en la Mac** (cuando ya no se use para ensayar):
   ```bash
