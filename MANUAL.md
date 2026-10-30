@@ -1,7 +1,7 @@
 <div class="portada">
 <img src="docs/img/logo_unis.png" alt="Universidad del Istmo" width="120">
 <p class="institucion">Universidad del Istmo de Guatemala</p>
-<p class="curso">[Curso] · [Catedrático]</p>
+<p class="curso">Tecnología IP · Catedrático: Jorge Lara</p>
 <p class="titulo">Manual técnico de instalación y operación</p>
 <p class="subtitulo">Clúster de alta disponibilidad PostgreSQL 16 + Patroni + etcd + HAProxy<br>en tres equipos macOS / Linux</p>
 <p class="tipo">Manual técnico</p>
@@ -15,6 +15,8 @@
 |---|---|
 | **Autor** | Didvin Nohel Estrada Pineda |
 | **Carné** | 14092 |
+| **Curso** | Tecnología IP |
+| **Catedrático** | Jorge Lara |
 | **Repositorio** | github.com/NohelEstradaP/ha_db_ip |
 | **Documento complementario** | `INFORME.md` (diseño, fundamentos y resultados) |
 
