@@ -7,6 +7,8 @@ Clúster PostgreSQL 16 de 3 nodos con **Patroni** (failover automático), **etcd
 - Si se apaga **cualquier** equipo, otro toma el papel de primario solo, en unos 20–30 s.
 - Al volver, el equipo se re-sincroniza solo (`pg_rewind` o WAL).
 
+**Documentación principal:** [`INFORME.md`](INFORME.md) ([PDF](INFORME.pdf)), el informe técnico con diseño, fundamentos y resultados, y [`MANUAL.md`](MANUAL.md) ([PDF](MANUAL.pdf)), el manual de instalación, operación y recuperación.
+
 El plan completo, con la explicación de cada decisión, las pruebas y el guion de la demo, está en [`PLAN_ALTA_DISPONIBILIDAD.md`](PLAN_ALTA_DISPONIBILIDAD.md) (también en [PDF](PLAN_ALTA_DISPONIBILIDAD.pdf)).
 
 **Casos límite** (qué pasa si caen dos nodos, si se duerme una laptop, si se corta la red…): [`EDGE_CASES.md`](EDGE_CASES.md).
