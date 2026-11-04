@@ -130,6 +130,11 @@ case "$cmd" in
   parar-carga) parar_carga; echo "generadores detenidos" ;;
   monitor)   docker exec -it lab-app python app/monitor.py ;;
   panel)
+    # Sin los nodos del laboratorio el panel mostraría todo caído (y confunde con el clúster real en :8080)
+    if [ "$(docker inspect -f '{{.State.Running}}' lab-n1 2>/dev/null)" != "true" ]; then
+      echo "El laboratorio no está iniciado: ./laboratorio/lab.sh iniciar  (el panel del clúster real es ./scripts/panel.sh, puerto 8080)" >&2
+      exit 1
+    fi
     dc up -d app >/dev/null 2>&1
     if ! curl -s -o /dev/null -m 2 http://localhost:18080/api/estado; then
       # esperar a que el contenedor termine de instalar psycopg
