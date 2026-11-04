@@ -220,7 +220,7 @@ paso_energia() {
     sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1
     sudo sed -i 's/^#\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf
     sudo sed -i 's/^#\?HandleLidSwitchExternalPower=.*/HandleLidSwitchExternalPower=ignore/' /etc/systemd/logind.conf
-    ok "Pop!_OS: suspensión desactivada (se aplica completo tras reiniciar sesión)"
+    ok "Linux: suspensión desactivada (se aplica completo tras reiniciar sesión)"
   fi
 }
 
