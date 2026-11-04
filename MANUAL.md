@@ -54,12 +54,12 @@ Este manual explica cómo instalar, poner en marcha, operar, probar y recuperar 
 - `$` indica un comando de terminal. En los bloques de código se omite.
 - **⚠** marca una acción que puede interrumpir el servicio o borrar datos.
 
-**Configuración de referencia (la del proyecto):**
+**Configuración de referencia (la del proyecto desde el 3 de noviembre de 2026; antes, n2 era una PC con Pop!_OS en 100.88.183.25):**
 
 | Nodo | Equipo | Sistema | Contenedores | IP Tailscale |
 |------|--------|---------|--------------|--------------|
 | n1 | MacBook Air M3 | macOS · ARM64 | Docker Desktop | 100.73.72.12 |
-| n2 | PC | Pop!_OS · x86-64 | Docker Engine | 100.88.183.25 |
+| n2 | Dell Latitude 5420 | Ubuntu 24.04 · x86-64 | Docker Engine | 100.69.167.56 |
 | n3 | MacBook Pro | macOS · ARM64 | OrbStack | 100.114.31.68 |
 
 ## 2. Descripción del sistema
@@ -230,7 +230,7 @@ Lo genera el instalador. **No se versiona** (está en `.gitignore`).
 NODE_NAME=n1                  # identidad de ESTE nodo
 NODE_IP=100.73.72.12          # IP de ESTE nodo
 N1_IP=100.73.72.12            # IP de los 3 nodos: idénticas en los 3 equipos
-N2_IP=100.88.183.25
+N2_IP=100.69.167.56
 N3_IP=100.114.31.68
 PG_SUPERUSER_PASSWORD=…       # idénticas en los 3 equipos
 PG_REPLICATION_PASSWORD=…
@@ -274,7 +274,7 @@ grep _IP .env       # debe ser idéntico en los 3 (salvo NODE_IP)
 $ ./scripts/estado.sh
 | Member | Host          | Role         | State     | TL | Lag in MB |
 | n1     | 100.73.72.12  | Sync Standby | streaming |  1 |         0 |
-| n2     | 100.88.183.25 | Leader       | running   |  1 |           |
+| n2     | 100.69.167.56 | Leader       | running   |  1 |           |
 | n3     | 100.114.31.68 | Replica      | streaming |  1 |         0 |
 ```
 

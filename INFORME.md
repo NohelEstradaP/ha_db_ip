@@ -235,6 +235,8 @@ El **teorema CAP** establece que, ante una partición de red, un sistema distrib
    síncrona (el COMMIT espera su confirmación) y la otra es asíncrona.
 ```
 
+> Las pruebas de §9.1–§9.5 se hicieron con esta configuración. El 3 de noviembre de 2026 la PC con Pop!_OS se retiró y **n2 pasó a ser una Dell Latitude 5420 con Ubuntu 24.04 (x86-64, 100.69.167.56)**. El reemplazo se documenta en §9.6.
+
 ### 6.2 Componentes y versiones
 
 | Componente | Versión | Función | Puertos |
@@ -573,6 +575,34 @@ RESULTADO: OK. 3 nodos con datos idénticos, suma = 1,000,000, sin secuencias fa
 
 Al cierre de la sesión de pruebas, la base acumuló **2,485 movimientos** de 3 corridas de generador, con suma 1,000,000.00 y 0 secuencias faltantes.
 
+### 9.6 Reemplazo de un nodo por otro equipo (3 de noviembre de 2026)
+
+El nodo n2 original (PC con Pop!_OS, 100.88.183.25) se retiró definitivamente y se reemplazó por una **Dell Latitude 5420 con Ubuntu 24.04 LTS** (x86-64, 15 GB de RAM, 100.69.167.56). Es el escenario real de "un equipo se daña y se sustituye por otro". Mientras tanto, el clúster siguió funcionando con n1 y n3: quórum de 2 de 3 en etcd y n3 como primario.
+
+| Paso | Cómo | Resultado |
+|------|------|-----------|
+| 1. Configurar n1 | `N2_IP` del `.env` cambiado a la IP nueva y `docker compose up -d` (n1 era réplica) | Sin interrupción |
+| 2. Instalar el equipo nuevo | Remoto por SSH: `git clone` del repositorio, `.env` de n2 y `./instalar.sh -y` | Docker 29.9.3, Python e imagen de Patroni construida (163,6 s), sin intervención |
+| 3. Unirlo al clúster | `iniciar.sh` (lo lanza el instalador al terminar) | Detectó el clúster existente, **retiró de etcd al n2 viejo** (`521968541786b595`), agregó el nuevo (`a277e1c0df87c0c7`), copió la base con `pg_basebackup` y quedó en `streaming` con lag 0 |
+| 4. Configurar n3 | Switchover planificado n3 → n1, luego `git pull`, nueva `N2_IP` y `docker compose up -d` en n3 | Pausa de escrituras de unos 3 s (switchover limpio) |
+| 5. Verificar | `probar_puertos.sh` desde n1 y n2; `verificar.py --esperar` | 18/18 puertos OK desde ambos; 3 nodos con datos idénticos |
+
+Estado final:
+
+```
+| Member | Host          | Role         | State     | TL | Lag in MB |
+| n1     | 100.73.72.12  | Leader       | running   | 23 |           |
+| n2     | 100.69.167.56 | Sync Standby | streaming | 23 |         0 |
+| n3     | 100.114.31.68 | Replica      | streaming | 23 |         0 |
+
+n1    PRIMARIO     100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+n2    réplica      100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+n3    réplica      100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+RESULTADO: OK. 3 nodos con datos idénticos, suma = 1,000,000, sin secuencias faltantes, un solo primario.
+```
+
+El equipo nuevo recibió una copia completa e idéntica de la base sin intervención manual, y el resto del clúster nunca dejó de aceptar escrituras salvo los ~3 s del switchover planificado. Con esto, la configuración final del clúster es: n1 MacBook Air (macOS, ARM64), n2 Dell Latitude 5420 (Ubuntu 24.04, x86-64) y n3 MacBook Pro (macOS, ARM64).
+
 ## 10. Incidentes encontrados durante la implementación
 
 | # | Síntoma | Causa | Solución aplicada |
@@ -599,7 +629,7 @@ Al cierre de la sesión de pruebas, la base acumuló **2,485 movimientos** de 3 
 | R2 | Acceso desde ≥ 2 equipos y siempre un mirror | Clientes en los 3 equipos; una réplica síncrona en todo momento; cada `COMMIT` en 2 equipos | ✔ |
 | R3 | Un equipo se apaga | Probado con el primario y con réplicas, de forma brusca, limpia, por red y por reinstalación | ✔ |
 | R4 | Integridad y funcionalidad continúan | Escrituras restablecidas en 3–26 s; suma constante; 0 faltantes; 0 duplicados; cliente = base | ✔ |
-| R5 | Re-sincronización al volver | `pg_rewind` (primario viejo), WAL (réplica), copia base automática (reinstalación) | ✔ |
+| R5 | Re-sincronización al volver | `pg_rewind` (primario viejo), WAL (réplica), copia base automática (reinstalación y reemplazo de equipo, §9.6) | ✔ |
 
 ### 11.2 RTO
 
