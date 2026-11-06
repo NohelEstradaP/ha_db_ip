@@ -7,9 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p evidencias
 PIDF="evidencias/.panel.pid"
+# Tras un reinicio el PID guardado puede pertenecer a otro proceso: se confirma que sea el panel
+activo() { [ -f "$PIDF" ] && ps -p "$(cat "$PIDF")" -o command= 2>/dev/null | grep -q "app/panel.py"; }
 
 if [ "${1:-}" = "--detener" ]; then
-  if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then kill -TERM "$(cat "$PIDF")"; echo "panel detenido"; else echo "no había panel en segundo plano"; fi
+  if activo; then kill -TERM "$(cat "$PIDF")"; echo "panel detenido"; else echo "no había panel en segundo plano"; fi
   rm -f "$PIDF"
   exit 0
 fi
@@ -18,6 +20,7 @@ fi
 source scripts/env_app.sh >/dev/null
 if [ "${1:-}" = "--fondo" ]; then
   shift
+  if activo; then echo "El panel ya está corriendo (pid $(cat "$PIDF")): http://localhost:8080"; exit 0; fi
   nohup python -u app/panel.py "$@" >> evidencias/panel.log 2>&1 &
   echo $! > "$PIDF"
   sleep 2

@@ -8,7 +8,8 @@ mkdir -p evidencias
 PIDF="evidencias/.generador.pid"
 LOG="evidencias/generador_$NODE_NAME.log"
 
-activo() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+# Tras un reinicio el PID guardado puede pertenecer a otro proceso: se confirma que sea el generador
+activo() { [ -f "$PIDF" ] && ps -p "$(cat "$PIDF")" -o command= 2>/dev/null | grep -q "app/generador.py"; }
 
 case "${1:-}" in
   iniciar)
