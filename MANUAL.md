@@ -691,6 +691,7 @@ Para usar `$N1_IP` en la terminal: `set -a; source .env; set +a`.
 | `probar_puertos.sh`: todo FALLA | El clúster no está levantado, o Tailscale está desconectado en este equipo | `./scripts/iniciar.sh`; `tailscale status` |
 | `password authentication failed` | Contraseñas distintas entre `.env` | §10.4 |
 | Nodo en `start failed` | `pg_rewind` falló o falta WAL | §10.3 |
+| Nodo en `stopped` varios minutos, con `running pg_rewind … in progress` en el log | `pg_rewind` colgado por un corte de red (no tiene tiempo límite) | `./scripts/pctl.sh reinit hadb <nodo> --force` (§10.3) |
 | `cluster ID mismatch` en etcd | Volumen de etcd borrado o nodo reinstalado | `./scripts/iniciar.sh` (automático) o §10.5 |
 | `412 candidate name does not match with sync_standby` | Switchover hacia un nodo que no es la síncrona | Panel o `switchover --force` (§9) |
 | Panel: "Sin primario" pero el clúster funciona | El panel corre en el nodo aislado | Ver el panel en un nodo del lado con mayoría |
