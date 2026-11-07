@@ -1,0 +1,1089 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+\fi
+\usepackage[spanish,es-noshorthands,es-tabla,es-nodecimaldot]{babel}
+\usepackage[a4paper,top=2.3cm,bottom=2.3cm,left=2.4cm,right=2.4cm,headheight=14pt]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{array,booktabs,tabularx,longtable}
+\usepackage{float}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+\definecolor{azul}{HTML}{0B3D63}
+\definecolor{azulmedio}{HTML}{134F7F}
+\definecolor{azulclaro}{HTML}{E3EEFB}
+\definecolor{serie}{HTML}{2A78D6}
+\definecolor{gris}{HTML}{5A5A5A}
+\definecolor{grisclaro}{HTML}{F2F4F7}
+\definecolor{bordegris}{HTML}{C9D6E2}
+\definecolor{rojo}{HTML}{D03B3B}
+\definecolor{verde}{HTML}{0CA30C}
+
+\hypersetup{
+  pdftitle={Alta disponibilidad en el acceso a una base de datos},
+  pdfauthor={Didvin Nohel Estrada Pineda},
+  pdfsubject={Tecnología IP - Informe técnico},
+  pdfkeywords={PostgreSQL, Patroni, etcd, HAProxy, alta disponibilidad, replicación}
+}
+
+\titleformat{\section}{\Large\bfseries\color{azul}}{\thesection.}{0.6em}{}[{\color{bordegris}\titlerule}]
+\titleformat{\subsection}{\large\bfseries\color{azulmedio}}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.6em}{0.8em}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gris}Alta disponibilidad en el acceso a una base de datos}
+\fancyhead[R]{\small\color{gris}D. N. Estrada Pineda · 14092}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlist{itemsep=2pt,topsep=4pt}
+\setlength{\parskip}{4pt}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.25}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\lstdefinestyle{codigo}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{grisclaro},
+  frame=leftline,
+  framerule=2pt,
+  rulecolor=\color{azulmedio},
+  xleftmargin=8pt,
+  framexleftmargin=6pt,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  upquote=true,
+  aboveskip=8pt,
+  belowskip=8pt,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1
+           {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1 {Ñ}{{\~N}}1
+}
+\lstset{style=codigo}
+
+\newcommand{\cod}[1]{\texttt{#1}}
+\newcommand{\flecha}{\ensuremath{\rightarrow}}
+\newcommand{\ok}{\textcolor{verde}{\ensuremath{\checkmark}}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{0.4cm}
+  \includegraphics[width=3.4cm]{img/logo_unis.png}\par
+  \vspace{0.6cm}
+  {\Large\bfseries\color{azul} Universidad del Istmo de Guatemala\par}
+  \vspace{0.2cm}
+  {\large\color{gris} Tecnología IP\par}
+  {\color{gris} Catedrático: Jorge Lara\par}
+  \vspace{2.8cm}
+  {\huge\bfseries\color{azul} Alta disponibilidad en el acceso\\[4pt] a una base de datos\par}
+  \vspace{0.6cm}
+  {\large Clúster PostgreSQL de tres nodos con Patroni, etcd y HAProxy\\
+  sobre macOS (ARM) y Linux (x86) con replicación síncrona\\ y failover automático\par}
+  \vspace{1.6cm}
+  {\color{azulmedio}\rule{0.6\textwidth}{0.4pt}\par\vspace{6pt}
+  \large\scshape Informe técnico\par\vspace{2pt}
+  \rule{0.6\textwidth}{0.4pt}\par}
+  \vfill
+  {\Large\bfseries Didvin Nohel Estrada Pineda\par}
+  \vspace{0.15cm}
+  {\large Carné 14092\par}
+  \vspace{1.2cm}
+  {\color{gris} Guatemala, noviembre de 2026\par}
+  \vspace*{0.6cm}
+\end{titlepage}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Autor} & Didvin Nohel Estrada Pineda \\
+\textbf{Carné} & 14092 \\
+\textbf{Curso} & Tecnología IP \\
+\textbf{Catedrático} & Jorge Lara \\
+\textbf{Repositorio} & \url{https://github.com/NohelEstradaP/ha_db_ip} \\
+\textbf{Documento complementario} & Manual técnico de instalación y operación (\cod{MANUAL.md}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Resumen}
+\addcontentsline{toc}{section}{Resumen}
+
+Se diseñó, implementó y probó un sistema de \textbf{alta disponibilidad} para una base de datos PostgreSQL 16 distribuida en \textbf{tres equipos físicos} con sistemas operativos y arquitecturas de procesador distintos, comunicados por una red privada en malla (Tailscale).
+
+\begin{table}[H]
+\centering
+\caption{Equipos del clúster durante las pruebas principales.}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Nodo} & \textbf{Equipo} & \textbf{Sistema} & \textbf{CPU} \\
+\midrule
+n1 & MacBook Air M3 & macOS & ARM64 \\
+n2 & PC & Pop!\_OS (Linux) & x86-64 \\
+n3 & MacBook Pro & macOS & ARM64 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Componentes de la solución:
+\begin{itemize}
+  \item \textbf{Patroni} administra cada instancia de PostgreSQL y automatiza el failover.
+  \item \textbf{etcd} aporta el consenso distribuido (algoritmo Raft) y el quórum de 2 de 3 que evita el \emph{split-brain}.
+  \item La \textbf{replicación síncrona} garantiza que toda transacción confirmada exista en al menos dos equipos (RPO = 0).
+  \item \textbf{HAProxy} y una cadena de conexión libpq con varios hosts hacen que el cliente siempre encuentre al primario.
+\end{itemize}
+
+Una carga constante de transferencias bancarias (180 cambios por minuto por generador, el doble del mínimo exigido) se mantuvo mientras se provocaron fallas reales:
+
+\begin{table}[H]
+\centering
+\caption{Tiempo sin escrituras por escenario de falla.}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+\textbf{Escenario} & \textbf{Tiempo sin escrituras} \\
+\midrule
+Apagado brusco del primario & 26,1 s \\
+Detención limpia del primario & 3,0 s \\
+Partición de red del primario & 22 s hasta el nuevo primario; el nodo aislado se degradó solo a los 11 s \\
+Caída de una réplica & 0 s \\
+Desconexión de 10 minutos & 0 s; re-sincronización en 5 s \\
+Reinstalación completa de un nodo & 0 s; reincorporación automática en 24 s \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+En todas las pruebas la suma de saldos se mantuvo exactamente en Q1,000,000.00 y no se perdió ni se duplicó ninguna transacción confirmada. La verificación final encontró los mismos 1,301 movimientos en los tres nodos que el cliente había recibido como confirmados, con hashes idénticos.
+
+\clearpage
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+
+\section{Introducción}
+
+En la mayoría de sistemas de información la base de datos es el componente más crítico: si deja de responder, todas las aplicaciones que dependen de ella se detienen, y si falla en el momento equivocado puede perder transacciones ya reportadas como exitosas. Una base de datos instalada en un único equipo es, por definición, un \textbf{punto único de falla}. Basta un corte de energía, un reinicio por actualizaciones, un disco dañado o un cable desconectado.
+
+La \textbf{alta disponibilidad} (\emph{High Availability}, HA) busca que el servicio siga funcionando aunque fallen componentes individuales. En bases de datos relacionales esto implica resolver tres problemas a la vez:
+
+\begin{enumerate}
+  \item \textbf{Redundancia de datos:} mantener copias actualizadas en más de un equipo.
+  \item \textbf{Detección y conmutación automática:} decidir sin intervención humana qué copia toma el control cuando falla la principal, y redirigir a los clientes hacia ella.
+  \item \textbf{Consistencia:} garantizar que en ningún momento existan dos copias aceptando escrituras independientes (\emph{split-brain}), que nada confirmado se pierda y que un equipo que regresa se reincorpore sin corromper los datos.
+\end{enumerate}
+
+Este informe documenta una solución completa a estos tres problemas, construida con herramientas de código abierto usadas en producción, desplegada en tres equipos físicos heterogéneos y validada con fallas provocadas de forma deliberada.
+
+\section{Objetivos}
+
+\subsection{Objetivo general}
+
+Implementar el acceso de alta disponibilidad a una base de datos que reciba al menos 90 cambios por minuto, replicada en tres equipos, de forma que la pérdida de cualquiera de ellos no interrumpa el servicio ni comprometa la integridad de los datos, y que el equipo afectado se re-sincronice automáticamente al regresar.
+
+\subsection{Objetivos específicos}
+
+\begin{enumerate}
+  \item Desplegar un clúster PostgreSQL de tres nodos en tres equipos físicos con macOS y Linux, y con arquitecturas ARM64 y x86-64.
+  \item Automatizar la detección de fallas y la promoción de un nuevo primario mediante Patroni y un almacén de consenso (etcd).
+  \item Garantizar cero pérdida de transacciones confirmadas (RPO = 0) mediante replicación síncrona.
+  \item Impedir el \emph{split-brain} mediante quórum.
+  \item Medir el tiempo de recuperación (RTO) en distintos escenarios de falla.
+  \item Comprobar la integridad de los datos con invariantes verificables antes, durante y después de cada falla.
+  \item Automatizar la instalación, la reincorporación de nodos y el monitoreo para que el sistema sea reproducible.
+\end{enumerate}
+
+\section{Marco teórico}
+
+\subsection{Write-Ahead Log (WAL)}
+
+PostgreSQL no escribe los cambios directamente en los archivos de tablas. Primero los registra de forma secuencial en el \textbf{Write-Ahead Log} (WAL), un registro de bitácora en el que cada modificación queda descrita a nivel de bytes en páginas de datos. Una transacción se considera confirmada (durable) cuando su registro de \cod{COMMIT} llegó al WAL en disco. Ante una caída, PostgreSQL reproduce el WAL desde el último \emph{checkpoint} y reconstruye el estado exacto. Cada posición del WAL se identifica con un \textbf{LSN} (\emph{Log Sequence Number}), por ejemplo \cod{0/46467A8}.
+
+\subsection{Replicación física por streaming}
+
+Si el WAL describe todos los cambios, basta enviarlo a otro servidor para que este los reproduzca y mantenga una copia idéntica. Eso es la \textbf{replicación física por streaming}:
+
+\begin{enumerate}
+  \item La réplica se crea con una copia base del primario (\cod{pg\_basebackup}).
+  \item La réplica abre una conexión de replicación (\emph{walreceiver}) y el primario le envía el WAL (\emph{walsender}) en tiempo real.
+  \item La réplica aplica el WAL continuamente y acepta consultas de solo lectura (\emph{hot standby}).
+\end{enumerate}
+
+La copia es \textbf{byte a byte}, no lógica. Por eso primario y réplicas deben usar la misma versión mayor de PostgreSQL y un formato de datos compatible.
+
+\subsection{Replicación síncrona y asíncrona}
+
+\begin{itemize}
+  \item \textbf{Asíncrona:} el primario confirma el \cod{COMMIT} al cliente apenas lo escribe en su propio disco. Si muere antes de que el WAL llegue a la réplica, esa transacción confirmada \textbf{se pierde} al promover la réplica.
+  \item \textbf{Síncrona:} el primario espera a que al menos una réplica confirme que escribió el WAL en su disco antes de responder al cliente (\cod{synchronous\_commit = on} y \cod{synchronous\_standby\_names}). Toda transacción confirmada existe en \textbf{dos} equipos. El costo es la latencia de un viaje de red por \cod{COMMIT} y la necesidad de contar siempre con una réplica síncrona disponible.
+\end{itemize}
+
+\subsection{RPO y RTO}
+
+\begin{itemize}
+  \item \textbf{RPO} (\emph{Recovery Point Objective}): cuántos datos se pueden perder en una falla. Con replicación síncrona, RPO = 0 para transacciones confirmadas.
+  \item \textbf{RTO} (\emph{Recovery Time Objective}): cuánto tiempo pasa sin poder escribir hasta que el servicio se restablece.
+\end{itemize}
+
+\subsection{Consenso distribuido, Raft y etcd}
+
+Para decidir cuál nodo es el primario no basta con que cada nodo ``crea'' algo: deben \textbf{ponerse de acuerdo}. \textbf{etcd} es un almacén clave-valor distribuido que implementa el algoritmo de consenso \textbf{Raft}:
+
+\begin{itemize}
+  \item Los miembros eligen un líder de etcd. Toda escritura se replica y solo se confirma cuando la \textbf{mayoría} de los miembros la registró.
+  \item Con $N$ miembros, la mayoría es $\lfloor N/2 \rfloor + 1$ y se toleran $\lfloor (N-1)/2 \rfloor$ fallas. Con 3 miembros, la mayoría es 2 y se tolera \textbf{una} falla.
+  \item etcd ofrece \textbf{leases} (claves con tiempo de vida): una clave asociada a un lease desaparece si nadie lo renueva antes de que expire.
+\end{itemize}
+
+\subsection{Patroni}
+
+\textbf{Patroni} es un agente escrito en Python que corre junto a cada PostgreSQL y lo administra: lo inicia, lo configura como primario o réplica, lo promueve y lo degrada. Funciona con un ciclo (\emph{HA loop}) que se ejecuta cada \cod{loop\_wait} segundos:
+
+\begin{enumerate}
+  \item El primario renueva en etcd la \textbf{llave de líder} (\cod{/service/hadb/leader}), que tiene un TTL (\cod{ttl}).
+  \item Si el primario muere o queda aislado, deja de renovarla y la llave expira al cumplirse el TTL.
+  \item Las réplicas detectan que no hay líder, comparan su posición de WAL y la más adecuada intenta tomar la llave. etcd garantiza que \textbf{solo una} lo logre.
+  \item El ganador se promueve (\cod{pg\_promote}) y los demás se reconfiguran para replicar desde él.
+  \item Si un primario pierde el contacto con etcd y no puede renovar su llave, \textbf{se degrada a sí mismo} a réplica de solo lectura.
+\end{enumerate}
+
+En \textbf{modo síncrono} (\cod{synchronous\_mode: true}), Patroni guarda además en etcd cuál réplica es la síncrona y \textbf{solo esa} puede ser promovida, porque es la única con garantía de tener todo lo confirmado.
+
+Patroni expone una API REST (puerto 8008). \cod{GET /primary} responde 200 solo en el primario y \cod{GET /replica} responde 200 solo en las réplicas sanas. Esa API la usan los balanceadores.
+
+\subsection{Timelines y pg\_rewind}
+
+Cada vez que una réplica es promovida, PostgreSQL abre un \textbf{timeline} nuevo ($1 \rightarrow 2 \rightarrow 3 \ldots$), una nueva rama de la historia del WAL. El primario anterior puede haber escrito en el timeline viejo un poco de WAL que nunca llegó a la réplica: son transacciones no confirmadas al cliente si la replicación es síncrona. Para reincorporarlo como réplica hay que descartar esa divergencia. \textbf{\cod{pg\_rewind}} lo hace sin copiar toda la base: compara ambos servidores desde el último punto común y copia solo los bloques modificados. Requiere \cod{wal\_log\_hints = on} o \emph{data checksums}.
+
+\subsection{Slots de replicación y retención de WAL}
+
+Un \textbf{slot de replicación} hace que el primario retenga el WAL que una réplica todavía no recibió. Junto con \cod{wal\_keep\_size}, esto permite que una réplica desconectada un tiempo se ponga al día solo con el WAL, sin volver a copiar toda la base.
+
+\subsection{Split-brain y teorema CAP}
+
+El \textbf{split-brain} ocurre cuando dos nodos se consideran primarios a la vez y aceptan escrituras independientes. Los datos divergen y no se pueden reconciliar automáticamente. Con dos nodos no hay forma de distinguir ``el otro murió'' de ``se cortó la red''. Con tres y quórum sí: el lado con mayoría continúa y el lado en minoría sabe que está aislado.
+
+El \textbf{teorema CAP} establece que, ante una partición de red, un sistema distribuido debe elegir entre \textbf{consistencia} y \textbf{disponibilidad}. Esta solución elige \textbf{consistencia}: el lado en minoría deja de aceptar escrituras y el lado con mayoría sigue disponible.
+
+\subsection{Enrutamiento de clientes}
+
+\begin{itemize}
+  \item \textbf{libpq con varios hosts:} la biblioteca cliente de PostgreSQL acepta \cod{host=a,b,c} y \cod{target\_session\_attrs=read-write}. Prueba los hosts en orden y se queda con el que acepta escrituras.
+  \item \textbf{HAProxy:} balanceador TCP que, con chequeos HTTP a la API de Patroni, envía el puerto 5000 solo al primario y el 5001 a las réplicas.
+\end{itemize}
+
+\section{Análisis del problema y requerimientos}
+
+\subsection{Requerimientos del enunciado}
+
+\begin{table}[H]
+\centering
+\caption{Requerimientos del enunciado y su interpretación técnica.}
+\begin{tabularx}{\textwidth}{@{}lL{5.2cm}Y@{}}
+\toprule
+\textbf{\#} & \textbf{Requerimiento} & \textbf{Interpretación técnica} \\
+\midrule
+R1 & Al menos 90 cambios por minuto & Carga sostenida y medible de \cod{INSERT}/\cod{UPDATE}, también durante las fallas \\
+R2 & Acceso desde dos o más equipos y siempre algún mirror & Clientes en varios equipos; al menos una copia actualizada en todo momento \\
+R3 & Uno de los equipos se apagará & Cualquiera, incluido el primario, sin aviso \\
+R4 & Integridad y funcionalidad continúan con un equipo desconectado & Failover automático, sin pérdida ni duplicación de datos confirmados \\
+R5 & Al restablecer la comunicación se vuelve a sincronizar & Reincorporación automática como réplica, incluso del primario anterior \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Restricciones del entorno}
+
+\begin{itemize}
+  \item Tres equipos personales: dos MacBook con Apple Silicon y una PC con Pop!\_OS. Durante el proyecto el tercer equipo resultó ser una segunda Mac en lugar de la segunda PC Linux prevista.
+  \item Los equipos pueden estar en la misma red o en redes distintas (casa, universidad).
+  \item No hay servidores dedicados ni IP públicas, y la demostración se hace en vivo.
+\end{itemize}
+
+\section{Diseño de la solución}
+
+\subsection{Alternativas evaluadas}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Alternativas evaluadas.}
+\begin{tabularx}{\textwidth}{@{}L{3.3cm}YYl@{}}
+\toprule
+\textbf{Alternativa} & \textbf{Ventajas} & \textbf{Desventajas} & \textbf{Decisión} \\
+\midrule
+\textbf{PostgreSQL + Patroni + etcd} & Estándar de la industria; failover automático; replicación síncrona; \cod{pg\_rewind}; API de salud & Más componentes & \textbf{Elegida} \\
+MariaDB Galera & Multi-maestro síncrono & En macOS solo por Docker; \emph{certification conflicts} bajo contención & Descartada \\
+MongoDB Replica Set & Failover nativo y simple & NoSQL; el curso trata bases relacionales & Descartada \\
+Replicación nativa sin orquestador & Simple & Failover manual: no cumple R4 & Descartada \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Decisiones de diseño}
+
+\begin{enumerate}
+  \item \textbf{Tres nodos.} Es el mínimo que permite quórum (2 de 3). Con dos nodos el split-brain es inevitable ante una partición.
+  \item \textbf{Replicación síncrona con una réplica síncrona} (\cod{synchronous\_mode: true}, \cod{synchronous\_node\_count: 1}) y la otra asíncrona. Así se tiene RPO = 0 sin que la caída de una réplica detenga las escrituras: si cae la síncrona, Patroni nombra síncrona a la otra.
+  \item \textbf{\cod{synchronous\_mode\_strict: false}.} Si solo quedara el primario con quórum, preferir disponibilidad. No ocurre con una sola falla, porque etcd perdería el quórum antes.
+  \item \textbf{Docker en los tres equipos con la misma imagen} (\cod{postgres:16-bookworm} + Patroni 4.0.4). La replicación física copia archivos byte a byte, así que los tres nodos deben usar el mismo binario de PostgreSQL y la misma biblioteca de colación. Con una instalación nativa, macOS usaría sus propias colaciones y Linux las de glibc, con riesgo de corromper índices de texto.
+  \item \textbf{\cod{initdb --locale=C.UTF-8} y \cod{--data-checksums}.} El orden de texto queda independiente de la plataforma y los \emph{checksums} detectan corrupción y habilitan \cod{pg\_rewind}.
+  \item \textbf{Tailscale} como red. Cada equipo recibe una IP fija \cod{100.x.y.z} que no cambia aunque cambie la red física, y la red es en malla, sin un equipo central que sea punto único de falla.
+  \item \textbf{Tiempos de Patroni ajustados:} \cod{ttl} de 20 s, \cod{loop\_wait} de 5 s y \cod{retry\_timeout} de 5 s, cumpliendo $\mathit{loop\_wait} + 2\cdot\mathit{retry\_timeout} \leq \mathit{ttl}$. El failover queda en unos 20--30 s ante un apagado brusco; con los valores por defecto serían unos 40 s.
+  \item \textbf{Tiempos de etcd para WAN:} \cod{heartbeat-interval} de 250 ms y \cod{election-timeout} de 2,500 ms. Toleran la latencia de Tailscale entre redes distintas sin elecciones falsas.
+  \item \textbf{Cliente idempotente.} Cada transacción lleva un identificador único \cod{(generador, seq)} y se reintenta con \cod{ON CONFLICT DO NOTHING}, lo que da semántica de ``exactamente una vez'' aunque la conexión se caiga en pleno \cod{COMMIT}.
+\end{enumerate}
+
+\section{Arquitectura}
+
+\subsection{Vista general}
+
+La figura~\ref{fig:arquitectura} muestra los tres nodos. Cada uno ejecuta los mismos tres contenedores (etcd, Patroni con PostgreSQL y HAProxy). El rol de primario puede estar en cualquier nodo; de las otras dos, una es la réplica síncrona (el \cod{COMMIT} espera su confirmación) y la otra es asíncrona.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  nodo/.style={draw=bordegris, rounded corners=3pt, fill=white, minimum width=4.1cm, minimum height=7.2cm},
+  comp/.style={draw=azulmedio, rounded corners=2pt, fill=azulclaro, minimum width=3.6cm, minimum height=0.62cm, align=center},
+  prim/.style={draw=serie, rounded corners=2pt, fill=serie, text=white, minimum width=3.6cm, minimum height=0.62cm, align=center},
+  wal/.style={-{Stealth[length=2.2mm]}, line width=1.1pt, draw=serie},
+  walasync/.style={-{Stealth[length=2.2mm]}, line width=1.1pt, draw=serie, dashed},
+  raft/.style={{Stealth[length=1.6mm]}-{Stealth[length=1.6mm]}, line width=0.7pt, draw=gris, densely dotted}
+]
+\node[nodo] (N1) at (0,0) {};
+\node[nodo] (N2) at (5.6,0) {};
+\node[nodo] (N3) at (11.2,0) {};
+
+\foreach \n/\t/\s/\d/\ip in {N1/n1 · MacBook Air M3/macOS · ARM64/Docker Desktop/100.73.72.12,
+                             N2/n2 · PC Linux/Linux · x86-64/Docker Engine/100.88.183.25,
+                             N3/n3 · MacBook Pro/macOS · ARM64/OrbStack/100.114.31.68} {
+  \node[font=\footnotesize\bfseries] at ($(\n.north)+(0,-0.4)$) {\t};
+  \node[align=center, text=gris, font=\scriptsize] at ($(\n.north)+(0,-1.05)$) {\s\\\d\\\texttt{\ip}};
+}
+
+\node[comp] (E1) at ($(N1.north)+(0,-2.15)$) {etcd \texttt{:2379/:2380}};
+\node[comp] (E2) at ($(N2.north)+(0,-2.15)$) {etcd \texttt{:2379/:2380}};
+\node[comp] (E3) at ($(N3.north)+(0,-2.15)$) {etcd \texttt{:2379/:2380}};
+
+\node[prim] (P1) at ($(N1.north)+(0,-3.35)$) {Patroni \texttt{:8008}\\PostgreSQL 16 \texttt{:5432}\\\textbf{PRIMARIO}};
+\node[comp] (P2) at ($(N2.north)+(0,-3.35)$) {Patroni \texttt{:8008}\\PostgreSQL 16 \texttt{:5432}\\réplica síncrona};
+\node[comp] (P3) at ($(N3.north)+(0,-3.35)$) {Patroni \texttt{:8008}\\PostgreSQL 16 \texttt{:5432}\\réplica asíncrona};
+
+\node[comp] (H1) at ($(N1.north)+(0,-5.0)$) {HAProxy\\\texttt{:5000 :5001 :7000}};
+\node[comp] (H2) at ($(N2.north)+(0,-5.0)$) {HAProxy\\\texttt{:5000 :5001 :7000}};
+\node[comp] (H3) at ($(N3.north)+(0,-5.0)$) {HAProxy\\\texttt{:5000 :5001 :7000}};
+
+\node[align=center, text=gris, font=\scriptsize] at ($(N1.north)+(0,-6.25)$) {generador.py\\panel web \texttt{:8080}};
+\node[align=center, text=gris, font=\scriptsize] at ($(N2.north)+(0,-6.25)$) {generador.py};
+\node[align=center, text=gris, font=\scriptsize] at ($(N3.north)+(0,-6.25)$) {generador.py};
+
+\draw[raft] (E1.east) -- (E2.west);
+\draw[raft] (E2.east) -- (E3.west);
+
+\draw[wal] (P1.east) -- node[above, font=\scriptsize, text=serie]{síncrona} (P2.west);
+\draw[walasync] (P1.south) -- ++(0,-0.42) -| node[pos=0.27, above, font=\scriptsize, text=serie]{asíncrona} (P3.south);
+
+\begin{scope}[on background layer]
+\node[draw=azul, dashed, rounded corners=6pt, fit=(N1)(N2)(N3), inner sep=8pt, label={[font=\footnotesize\bfseries, text=azul]above:Red privada Tailscale (WireGuard), en malla, sin nodo central}] {};
+\end{scope}
+
+\node[font=\scriptsize, text=gris, anchor=north] at ($(N2.south)+(0,-0.35)$) {
+  \tikz\draw[raft] (0,0) -- (0.6,0); \ consenso Raft entre los etcd (quórum 2 de 3) \qquad
+  \tikz\draw[wal] (0,0) -- (0.6,0); \ envío de WAL (streaming)};
+\end{tikzpicture}
+\caption{Arquitectura del clúster durante las pruebas principales.}
+\label{fig:arquitectura}
+\end{figure}
+
+Las pruebas de las secciones 9.1 a 9.5 se hicieron con esta configuración. El 3 de noviembre de 2026 la PC con Pop!\_OS se retiró y \textbf{n2 pasó a ser una Dell Latitude 5420 con Ubuntu 24.04 (x86-64, \cod{100.69.167.56})}. El reemplazo se documenta en la sección~\ref{sec:reemplazo}.
+
+\subsection{Componentes y versiones}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Componentes y versiones.}
+\begin{tabularx}{\textwidth}{@{}lL{3.6cm}YL{2.6cm}@{}}
+\toprule
+\textbf{Componente} & \textbf{Versión} & \textbf{Función} & \textbf{Puertos} \\
+\midrule
+PostgreSQL & 16.15 (Debian 12, pgdg) & Motor de base de datos & 5432 \\
+Patroni & 4.0.4 (psycopg 3, etcd v3) & Orquestación, failover, \cod{pg\_rewind}, API REST & 8008 \\
+etcd & 3.5.17 & Consenso Raft, llave de líder, estado síncrono & 2379 cliente, 2380 pares \\
+HAProxy & 3.0 & 5000 \flecha{} primario, 5001 \flecha{} réplicas, 7000 \flecha{} estadísticas & 5000, 5001, 7000 \\
+Tailscale & 1.10x & VPN en malla con IP fija por equipo & UDP 41641 \\
+Docker & Desktop 28.0.4, Engine 29.9.2, OrbStack & Contenedores con la misma imagen en los 3 nodos & --- \\
+Panel web & propio (Python + HTML) & Estado en tiempo real y cambio de primario & 8080 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Flujo de una escritura}
+
+\begin{enumerate}
+  \item El cliente abre una conexión con \cod{host=n1,n2,n3 target\_session\_attrs=read-write}. libpq descarta las réplicas y se queda con el primario.
+  \item El cliente ejecuta la transacción: bloquea las dos cuentas, inserta el movimiento y actualiza los saldos.
+  \item En el \cod{COMMIT}, el primario escribe el WAL en su disco y lo envía a ambas réplicas.
+  \item El primario \textbf{espera} la confirmación de la réplica síncrona y solo entonces responde \cod{COMMIT} al cliente.
+  \item La réplica asíncrona aplica el WAL milisegundos después.
+\end{enumerate}
+
+\subsection{Flujo de un failover}
+
+La figura~\ref{fig:failover} y la tabla~\ref{tab:failover} describen lo que ocurre cuando el primario se apaga de golpe.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\footnotesize, x=0.44cm]
+\fill[rojo!12] (0,-0.25) rectangle (26,0.25);
+\fill[verde!18] (26,-0.25) rectangle (31,0.25);
+\draw[-{Stealth[length=2mm]}, line width=0.8pt] (0,0) -- (31.5,0) node[right]{t (s)};
+\foreach \x in {0,5,10,15,20,25,30} {\draw (\x,-0.12) -- (\x,0.12); \node[below=3pt] at (\x,-0.12) {\x};}
+\draw[rojo, line width=1pt] (0,0.3) -- (0,1.3) node[above, align=center]{primario\\apagado};
+\draw[gris] (10,0.3) -- (10,1.0) node[above, align=center]{clientes detectan\\conexión muerta};
+\draw[gris] (20,0.3) -- (20,1.9) node[above, align=center]{expira la llave\\de líder (TTL)};
+\draw[serie, line width=1pt] (26,0.3) -- (26,1.0) node[above, align=center]{réplica síncrona\\promovida};
+\node[text=rojo] at (13,-1.0) {escrituras en pausa (los clientes reintentan)};
+\node[text=verde!60!black] at (28.6,-1.0) {servicio};
+\end{tikzpicture}
+\caption{Línea de tiempo de un failover por apagado brusco del primario (medido: 26,1 s).}
+\label{fig:failover}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Etapas de un failover por apagado brusco del primario.}
+\label{tab:failover}
+\begin{tabularx}{\textwidth}{@{}L{2cm}Y@{}}
+\toprule
+\textbf{Tiempo} & \textbf{Evento} \\
+\midrule
+t = 0 s & El primario deja de existir. Los \cod{COMMIT} en curso no reciben respuesta y los clientes detectan la conexión muerta (keepalives y \cod{tcp\_user\_timeout}, unos 10 s). \\
+0--20 s & La llave de líder sigue vigente en etcd hasta que se cumple su TTL (20 s desde la última renovación). Las escrituras quedan en pausa y los clientes reintentan. \\
+$\approx$ 20--25 s & La llave expira. Patroni en las réplicas detecta la ausencia de líder. Solo la \textbf{réplica síncrona} es elegible y toma la llave en etcd, con quórum de los 2 nodos vivos. \\
+$\approx$ 26 s & La réplica ejecuta \cod{pg\_promote}, abre un timeline nuevo y empieza a aceptar escrituras. La otra réplica pasa a replicar de ella y Patroni la nombra síncrona. \\
+$\approx$ 26 s en adelante & libpq y HAProxy encuentran al nuevo primario. Los clientes reintentan la misma \cod{seq} (idempotente) y recuperan el atraso. \\
+Al volver & El primario viejo detecta que su timeline quedó atrás. Patroni ejecuta \cod{pg\_rewind} contra el nuevo primario y lo arranca como réplica. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Comportamiento ante una partición de red}
+
+Si el primario pierde la red pero sigue encendido:
+\begin{itemize}
+  \item \textbf{Lado aislado:} no puede renovar la llave de líder porque no tiene quórum de etcd. Patroni lo degrada a sí mismo (\cod{demoting self because DCS is not accessible and I was a leader}). Además, con replicación síncrona, ningún \cod{COMMIT} puede confirmarse en ese lado, porque la réplica síncrona es inalcanzable.
+  \item \textbf{Lado con mayoría:} cuando expira la llave, promueve a la réplica síncrona.
+  \item \textbf{Resultado:} nunca hay dos primarios aceptando escrituras confirmadas.
+\end{itemize}
+
+\section{Implementación}
+
+\subsection{Estructura del repositorio}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Estructura del repositorio.}
+\begin{tabularx}{\textwidth}{@{}L{5.4cm}Y@{}}
+\toprule
+\textbf{Ruta} & \textbf{Contenido} \\
+\midrule
+\cod{instalar.sh} & Prepara un equipo como nodo (macOS y Linux) \\
+\cod{docker-compose.yml} & Servicios del nodo: etcd, Patroni/PostgreSQL y HAProxy \\
+\cod{.env.example} & Plantilla de identidad del nodo, IP y contraseñas \\
+\cod{patroni/Dockerfile}, \cod{patroni.yml} & Imagen PostgreSQL 16 + Patroni y su configuración \\
+\cod{haproxy/haproxy.cfg} & Enrutamiento por rol según la API de Patroni \\
+\cod{sql/esquema.sql} & Tablas \cod{cuentas} y \cod{movimientos} \\
+\cod{app/generador.py} & Generador de carga idempotente \\
+\cod{app/verificar.py} & Verificador de integridad entre los 3 nodos \\
+\cod{app/monitor.py} & Monitor de terminal \\
+\cod{app/panel.py}, \cod{app/panel.html} & Panel web en tiempo real con cambio de primario \\
+\cod{scripts/} & Iniciar, estado, crear BD, carga, panel, patronictl, prueba de puertos \\
+\cod{laboratorio/} & Los 3 nodos en una sola máquina, para pruebas \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Imagen de Patroni}
+
+\begin{lstlisting}
+FROM postgres:16-bookworm
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv curl \
+ && python3 -m venv /opt/patroni \
+ && /opt/patroni/bin/pip install --no-cache-dir "patroni[etcd3,psycopg3]==4.0.4" \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/patroni/bin:${PATH}"
+COPY patroni.yml /etc/patroni/patroni.yml
+USER postgres
+ENTRYPOINT ["patroni", "/etc/patroni/patroni.yml"]
+\end{lstlisting}
+
+La imagen base es multi-arquitectura: en las Mac se construye para ARM64 y en la PC para x86-64, con la misma versión de PostgreSQL (16.15) y de glibc.
+
+\subsection{Configuración de Patroni}
+
+\begin{lstlisting}
+scope: hadb
+namespace: /service/
+bootstrap:
+  dcs:
+    ttl: 20
+    loop_wait: 5
+    retry_timeout: 5
+    maximum_lag_on_failover: 1048576
+    synchronous_mode: true
+    synchronous_mode_strict: false
+    synchronous_node_count: 1
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        wal_log_hints: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 1GB
+        synchronous_commit: "on"
+        password_encryption: scram-sha-256
+  initdb: [ { encoding: UTF8 }, { locale: C.UTF-8 }, data-checksums ]
+postgresql:
+  listen: 0.0.0.0:5432
+  data_dir: /var/lib/postgresql/data/patroni
+  pg_hba:
+    - local   all          all                       trust
+    - host    replication  replicator  0.0.0.0/0     scram-sha-256
+    - host    all          all         0.0.0.0/0     scram-sha-256
+\end{lstlisting}
+
+El parámetro \cod{maximum\_lag\_on\_failover} impide promover una réplica con más de 1 MB de atraso. Los datos que cambian por nodo (nombre, IP anunciada, endpoints de etcd y contraseñas) llegan por variables de entorno \cod{PATRONI\_*} desde \cod{docker-compose.yml}, de modo que el archivo es idéntico en los tres nodos.
+
+\subsection{Servicios por nodo}
+
+Extracto de \cod{docker-compose.yml}:
+
+\begin{lstlisting}
+services:
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.17
+    command:
+      - --name=${NODE_NAME}
+      - --advertise-client-urls=http://${NODE_IP}:2379
+      - --initial-advertise-peer-urls=http://${NODE_IP}:2380
+      - --initial-cluster=n1=http://${N1_IP}:2380,n2=http://${N2_IP}:2380,n3=http://${N3_IP}:2380
+      - --initial-cluster-state=${ETCD_ESTADO_INICIAL:-new}
+      - --heartbeat-interval=250
+      - --election-timeout=2500
+  patroni:
+    build: ./patroni
+    init: true
+    stop_grace_period: 60s
+    environment:
+      PATRONI_NAME: ${NODE_NAME}
+      PATRONI_ETCD3_HOSTS: "${N1_IP}:2379,${N2_IP}:2379,${N3_IP}:2379"
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: ${NODE_IP}:5432
+      PATRONI_RESTAPI_CONNECT_ADDRESS: ${NODE_IP}:8008
+  haproxy:
+    image: haproxy:3.0
+\end{lstlisting}
+
+Todos los servicios usan \cod{restart: unless-stopped}. Junto con el arranque automático de Docker, un equipo que se enciende vuelve solo al clúster.
+
+\subsection{Enrutamiento con HAProxy}
+
+\begin{lstlisting}
+listen primario
+    bind *:5000
+    option httpchk
+    http-check send meth GET uri /primary
+    http-check expect status 200
+    default-server inter 2s fall 2 rise 2 on-marked-down shutdown-sessions
+    server n1 "${N1_IP}:5432" check port 8008
+    server n2 "${N2_IP}:5432" check port 8008
+    server n3 "${N3_IP}:5432" check port 8008
+\end{lstlisting}
+
+Cada 2 s HAProxy pregunta a la API de Patroni de cada nodo. Solo el primario responde 200 en \cod{/primary}. Con \cod{on-marked-down shutdown-sessions} se cortan de inmediato las conexiones a un nodo que deja de ser primario, para que el cliente reconecte al nuevo.
+
+\subsection{Cadena de conexión de la aplicación}
+
+\begin{lstlisting}
+host=100.73.72.12,100.88.183.25,100.114.31.68 port=5432 dbname=hadb user=app
+target_session_attrs=read-write connect_timeout=3
+keepalives=1 keepalives_idle=5 keepalives_interval=2 keepalives_count=3 tcp_user_timeout=10000
+\end{lstlisting}
+
+\cod{keepalives} y \cod{tcp\_user\_timeout} hacen que una conexión a un nodo que murió sin cerrar el socket se detecte en unos 10 s, en lugar de quedar colgada indefinidamente.
+
+\subsection{Automatización}
+
+\begin{itemize}
+  \item \textbf{\cod{instalar.sh}.} Detecta el sistema operativo y prepara el equipo: instala Homebrew o apt y Docker, o usa OrbStack si ya está instalado; instala Tailscale y desactiva la suspensión; verifica los puertos libres y detecta el Receptor AirPlay de macOS; genera el \cod{.env}, prepara Python y construye las imágenes. Se puede volver a ejecutar y, al terminar, ofrece levantar el nodo.
+  \item \textbf{\cod{scripts/iniciar.sh}.} Levanta el nodo y espera el quórum de etcd, el primario y la sincronización del propio nodo. Si el nodo fue reinstalado (sin datos de etcd) y el clúster ya existe, retira el miembro viejo de etcd, lo vuelve a agregar y lo arranca como miembro \cod{existing}. El modo de arranque se guarda en \cod{.env} para que las siguientes ejecuciones no recreen los contenedores.
+  \item \textbf{\cod{scripts/crear\_bd.sh}.} Crea el usuario, la base y el esquema en el primario, de forma idempotente.
+  \item \textbf{\cod{scripts/carga.sh} y \cod{scripts/panel.sh --fondo}.} Ejecutan el generador y el panel en segundo plano.
+\end{itemize}
+
+\subsection{Panel web en tiempo real}
+
+\cod{app/panel.py} es un servidor HTTP que solo usa la biblioteca estándar de Python y \cod{psycopg}:
+\begin{itemize}
+  \item \textbf{Un hilo por nodo} consulta cada segundo la API de Patroni (\cod{/patroni}), la salud de etcd (\cod{/health}), las estadísticas de HAProxy (CSV del puerto 7000) y el propio PostgreSQL (conteo de movimientos y suma de saldos).
+  \item \textbf{Otro hilo} escribe y lee por el mismo camino que la aplicación (la cadena de varios hosts), para medir los cambios por minuto y detectar las pausas de escritura.
+  \item \textbf{Un agregador} arma una foto por segundo y detecta eventos: caídas, cambios de rol, cambios de timeline y la duración de cada failover medida desde el lado del cliente.
+\end{itemize}
+
+\cod{app/panel.html} presenta, sin dependencias externas, indicadores, tarjetas por nodo, un diagrama de replicación, una gráfica de cambios por minuto con la línea del mínimo (90) y marcas de failover, los eventos, los generadores y los últimos movimientos. Cada tarjeta incluye el botón \textbf{Hacer primario}, que pide un \emph{switchover} planificado a la API de Patroni (\cod{POST /switchover}). Como Patroni solo promueve a la réplica síncrona, si el destino no lo es el panel encadena los pasos necesarios (por ejemplo n2 \flecha{} n1 \flecha{} n3) y muestra el avance.
+
+\section{Metodología de pruebas}
+
+\subsection{Modelo de datos e invariantes}
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE cuentas (
+    id integer PRIMARY KEY,
+    saldo numeric(14,2) NOT NULL CHECK (saldo >= 0), ...);
+CREATE TABLE movimientos (
+    id bigserial PRIMARY KEY,
+    generador text NOT NULL, seq bigint NOT NULL,
+    origen integer REFERENCES cuentas(id), destino integer REFERENCES cuentas(id),
+    monto numeric(14,2), primario text, creado timestamptz DEFAULT now(),
+    UNIQUE (generador, seq));
+\end{lstlisting}
+
+La tabla \cod{cuentas} contiene 100 cuentas de Q10,000.00, es decir, Q1,000,000.00 en total. Cada operación del generador es una \textbf{transferencia} en una sola transacción:
+\begin{itemize}
+  \item bloquea ambas cuentas en orden de \cod{id} (\cod{SELECT \ldots{} FOR UPDATE}), lo que evita \emph{deadlocks};
+  \item inserta el movimiento con \cod{ON CONFLICT (generador, seq) DO NOTHING};
+  \item descuenta del origen y abona al destino.
+\end{itemize}
+
+Son \textbf{3 cambios por transacción}: un generador a 1 transacción por segundo produce 180 cambios por minuto.
+
+Invariantes verificados:
+\begin{enumerate}
+  \item \textbf{Conservación:} \cod{SUM(saldo) = 1,000,000.00}. Una transacción aplicada a medias o dos veces alteraría la suma.
+  \item \textbf{Continuidad:} para cada generador, \cod{MAX(seq) = COUNT(*)}. Ninguna transacción confirmada falta.
+  \item \textbf{Igualdad entre nodos:} con la carga detenida, el md5 de las dos tablas es idéntico en los 3 nodos (\cod{verificar.py --esperar} espera a que las réplicas alcancen el LSN del primario).
+  \item \textbf{Cliente contra base:} cada transacción que el generador registró en su CSV como confirmada existe en la base.
+\end{enumerate}
+
+\subsection{Idempotencia del cliente}
+
+Si la conexión se cae durante el \cod{COMMIT}, el cliente no sabe si la transacción quedó guardada. El generador:
+\begin{itemize}
+  \item reconecta y \textbf{reintenta la misma \cod{seq}}: si ya existía, \cod{ON CONFLICT} la ignora y el resultado se registra como \cod{duplicado};
+  \item lleva un ritmo fijo y, tras una pausa, ejecuta las transacciones atrasadas para que el promedio por minuto se mantenga.
+\end{itemize}
+
+\subsection{Cómo se provocaron las fallas}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Métodos usados para provocar las fallas.}
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{5.6cm}Y@{}}
+\toprule
+\textbf{Falla} & \textbf{Método} & \textbf{Equivale a} \\
+\midrule
+Apagado brusco de un nodo & \cod{docker kill etcd patroni haproxy} (SIGKILL a los 3 contenedores) & Corte de energía: nada se cierra ordenadamente \\
+Detención limpia & \cod{docker compose stop patroni} & Apagado o reinicio ordenado del equipo \\
+Partición de red & \cod{tailscale down} en el nodo & Cable o WiFi desconectado con el equipo encendido \\
+Cambio planificado & \cod{patronictl switchover} o el botón del panel & Mantenimiento programado \\
+Reinstalación & \cod{docker compose down -v} (borra todos los datos del nodo) & Equipo formateado \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Antes de cada prueba se confirmó el clúster sano (1 Leader, 1 Sync Standby, 1 Replica con lag 0) y la carga activa.
+
+\subsection{Validación previa en laboratorio}
+
+El mismo diseño se probó primero con los 3 nodos en un solo equipo (\cod{laboratorio/}, una red Docker con IP fijas), usando la misma imagen y los mismos archivos de configuración.
+
+\begin{table}[H]
+\centering
+\caption{Resultados en el laboratorio local.}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Prueba} & \textbf{Resultado} \\
+\midrule
+Failover por apagado brusco (4 repeticiones) & 22--26 s \\
+Partición del primario & 27 s, sin dos primarios \\
+Reingreso del primario viejo & \cod{pg\_rewind} correcto \\
+Verificación de integridad & OK en todas las pruebas \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Resultados}
+
+\subsection{Compatibilidad entre arquitecturas (ARM64 y x86-64)}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Prueba de replicación entre arquitecturas.}
+\begin{tabularx}{\textwidth}{@{}L{6cm}Y@{}}
+\toprule
+\textbf{Paso} & \textbf{Resultado} \\
+\midrule
+Arranque del clúster con n3 (Mac, ARM64) como primario & n2 (PC, x86-64) copió la base con \cod{pg\_basebackup} y replicó en streaming \\
+Switchover n3 \flecha{} n1 \flecha{} n2 & n2 (x86-64) primario; las dos Mac (ARM64) replicaron desde él \\
+Datos en el primario x86 & 100 cuentas, suma 1,000,000.00 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{lstlisting}
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu      (n2)
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on aarch64-unknown-linux-gnu (n3)
+\end{lstlisting}
+
+La replicación física funciona en ambas direcciones entre arquitecturas porque los tres nodos comparten versión, formato de datos (64 bits, \emph{little-endian}, \cod{MAXALIGN} 8) y colación (\cod{C.UTF-8}).
+
+\subsection{Pruebas de falla en los equipos reales}
+
+Condiciones: generador a 1 transacción por segundo (180 cambios por minuto), 23 de octubre de 2026.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Pruebas de falla en los equipos reales.}
+\label{tab:pruebas}
+\begin{tabularx}{\textwidth}{@{}lL{2.2cm}L{1.45cm}L{2.4cm}L{0.95cm}ccY@{}}
+\toprule
+\textbf{Prueba} & \textbf{Escenario} & \textbf{Nodo (rol)} & \textbf{Escrituras en pausa} & \textbf{Nuevo prim.} & \textbf{Suma} & \textbf{Faltan} & \textbf{Re\-sincronización} \\
+\midrule
+P8 & Switchover planificado & n2 (primario) & \textbf{3,0 s} & n1 & \ok & 0 & 3 nodos sanos en 14 s \\
+P9 & Detención limpia de Patroni & n1 (primario) & \textbf{3,0 s} & n3 & \ok & 0 & réplica en 3 s \\
+P3 & \textbf{Apagado brusco} & n1 (primario) & \textbf{26,1 s} & n3 & \ok & 0 & \cod{pg\_rewind} desde n3, sano en 45 s \\
+P2 & Apagado brusco & n1 (réplica) & \textbf{0 s} & --- & \ok & 0 & streaming en 4 s \\
+P4 & \textbf{Partición de red} & n1 (primario) & se degradó a los \textbf{11 s}; promoción a los \textbf{22 s} & n3 & \ok & 0 & réplica en timeline 11, lag 0 \\
+P7 & 10 min desconectado con carga & n1 (réplica) & \textbf{0 s} & --- & \ok & 0 & 600 transacciones por WAL en \textbf{5 s} \\
+--- & Caída real no planificada (reinicio de Docker) & n2 (primario) & \textbf{5,0 s} & n1 & \ok & 0 & n2 volvió solo como réplica \\
+--- & \textbf{Reinstalación completa} & n1 (réplica) & \textbf{0 s} & --- & \ok & 0 & reincorporación a etcd y copia base: \textbf{24 s} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,
+  width=0.7\textwidth,
+  height=6.4cm,
+  xmin=0, xmax=30,
+  xlabel={Segundos sin escrituras},
+  symbolic y coords={Reinstalación de un nodo,Réplica 10 min fuera,Apagado de réplica,Switchover planificado,Detención limpia,Caída real de Docker,Partición de red,Apagado brusco},
+  ytick=data,
+  y tick label style={font=\footnotesize},
+  x tick label style={font=\footnotesize},
+  xlabel style={font=\footnotesize},
+  nodes near coords,
+  nodes near coords style={font=\footnotesize},
+  bar width=9pt,
+  enlarge y limits=0.08,
+  axis x line*=bottom,
+  axis y line*=left,
+  xmajorgrids=true,
+  grid style={draw=bordegris},
+]
+\addplot[fill=serie, draw=serie] coordinates {
+  (0,Reinstalación de un nodo)
+  (0,Réplica 10 min fuera)
+  (0,Apagado de réplica)
+  (3.0,Switchover planificado)
+  (3.0,Detención limpia)
+  (5.0,Caída real de Docker)
+  (22,Partición de red)
+  (26.1,Apagado brusco)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Tiempo sin escrituras (RTO) medido por escenario en los equipos reales.}
+\label{fig:rto}
+\end{figure}
+
+Durante P3, con n1 caído dos minutos, el clúster se mantuvo en estado ``Degradado: 2 de 3 nodos'' escribiendo a \textbf{180 cambios por minuto}, con suma 1,000,000.00 y 0 faltantes. Durante P7 se escribieron 600 transacciones (1,800 cambios) sin n1.
+
+\subsection{Línea de tiempo de la partición (P4)}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Línea de tiempo de la partición de red del primario.}
+\begin{tabularx}{\textwidth}{@{}lYl@{}}
+\toprule
+\textbf{Hora (UTC)} & \textbf{Evento} & \textbf{Fuente} \\
+\midrule
+01:30:11 & \cod{tailscale down} en n1 (primario) & prueba \\
+01:30:22 & n1: \cod{Error communicating with DCS}, \cod{demoting self because DCS is not accessible and I was a leader} & log de Patroni en n1 \\
+01:30:33 & Timeline 10 abierto en \textbf{n3} (nuevo primario) & \cod{patronictl history} \\
+reconexión & n1 vuelve como réplica en el timeline 11, lag 0 & \cod{patronictl list} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+El nodo aislado dejó de ser primario \textbf{antes} de que el otro lado promoviera uno nuevo: en ningún instante hubo dos primarios.
+
+\subsection{Cambio de primario desde el panel}
+
+\begin{table}[H]
+\centering
+\caption{Cambios de primario solicitados desde el panel web.}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Cambio solicitado} & \textbf{Pasos ejecutados} & \textbf{Tiempo total} \\
+\midrule
+n3 \flecha{} n2 (n2 era la réplica síncrona) & n3 \flecha{} n2 & 10,1 s \\
+n2 \flecha{} n3 (n3 no era la síncrona) & n2 \flecha{} n1 \flecha{} n3 & 22,3 s \\
+n3 \flecha{} n2 & n3 \flecha{} n2 & 16,3 s \\
+n1 \flecha{} n2 (n2 no era la síncrona) & 2 pasos & 26,3 s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El panel rechazó correctamente las solicitudes inválidas: el nodo ya era primario, el nodo no existía o había un cambio en curso.
+
+\subsection{Verificación final de integridad}
+
+Con la carga detenida, después de todas las pruebas:
+
+\begin{lstlisting}
+nodo  rol      cuentas           suma     movs faltan  md5 cuentas  md5 movs
+n1    replica      100   1,000,000.00     1301      0  7a6e1a907591 ea098493b542
+n2    replica      100   1,000,000.00     1301      0  7a6e1a907591 ea098493b542
+n3    PRIMARIO     100   1,000,000.00     1301      0  7a6e1a907591 ea098493b542
+
+RESULTADO: OK. 3 nodos con datos identicos, suma = 1,000,000, sin secuencias faltantes, un solo primario.
+\end{lstlisting}
+
+\begin{itemize}
+  \item \textbf{Cliente contra base:} el CSV del generador registró \textbf{1,301 transacciones confirmadas} y la base tiene exactamente \textbf{1,301 movimientos}, con \cod{seq} 1 a 1,301 sin huecos ni repeticiones.
+  \item \textbf{Reintentos:} 8 transacciones necesitaron un segundo intento, una por cada cambio de primario, y todas quedaron guardadas una sola vez.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Transacciones que necesitaron reintento.}
+\begin{tabularx}{\textwidth}{@{}llllY@{}}
+\toprule
+\textbf{Hora} & \textbf{seq} & \textbf{Latencia} & \textbf{Escrita en} & \textbf{Causa} \\
+\midrule
+19:22:53 & 74 & 1,7 s & n1 & P8 switchover \\
+19:23:20 & 102 & 0,8 s & n3 & P9 detención limpia \\
+19:24:14 & 153 & 3,9 s & n2 & switchover de preparación \\
+19:24:26 & 167 & 1,8 s & n1 & switchover de preparación \\
+19:25:24 & 198 & 29,1 s & n3 & \textbf{P3 apagado brusco} \\
+19:29:30 & 467 & 5,5 s & n2 & switchover de preparación \\
+19:29:45 & 486 & 1,8 s & n1 & switchover de preparación \\
+19:31:09 & 515 & 56,9 s & n3 & \textbf{P4 partición} (el cliente estaba del lado aislado) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Al cierre de la sesión de pruebas, la base acumuló \textbf{2,485 movimientos} de 3 corridas de generador, con suma 1,000,000.00 y 0 secuencias faltantes.
+
+\subsection{Reemplazo de un nodo por otro equipo}
+\label{sec:reemplazo}
+
+El 3 de noviembre de 2026 el nodo n2 original (PC con Pop!\_OS, \cod{100.88.183.25}) se retiró definitivamente y se reemplazó por una \textbf{Dell Latitude 5420 con Ubuntu 24.04 LTS} (x86-64, 15 GB de RAM, \cod{100.69.167.56}). Es el escenario real de ``un equipo se daña y se sustituye por otro''. Mientras tanto, el clúster siguió funcionando con n1 y n3: quórum de 2 de 3 en etcd y n3 como primario.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Pasos del reemplazo de n2.}
+\begin{tabularx}{\textwidth}{@{}L{2.6cm}L{5.4cm}Y@{}}
+\toprule
+\textbf{Paso} & \textbf{Cómo} & \textbf{Resultado} \\
+\midrule
+1. Configurar n1 & \cod{N2\_IP} del \cod{.env} cambiado a la IP nueva y \cod{docker compose up -d} (n1 era réplica) & Sin interrupción \\
+2. Instalar el equipo nuevo & Remoto por SSH: \cod{git clone} del repositorio, \cod{.env} de n2 y \cod{./instalar.sh -y} & Docker 29.9.3, Python e imagen de Patroni construida (163,6 s), sin intervención \\
+3. Unirlo al clúster & \cod{iniciar.sh} (lo lanza el instalador al terminar) & Detectó el clúster existente, \textbf{retiró de etcd al n2 viejo} (\cod{521968541786b595}), agregó el nuevo (\cod{a277e1c0df87c0c7}), copió la base con \cod{pg\_basebackup} y quedó en streaming con lag 0 \\
+4. Configurar n3 & Switchover planificado n3 \flecha{} n1, luego \cod{git pull}, nueva \cod{N2\_IP} y \cod{docker compose up -d} en n3 & Pausa de escrituras de unos 3 s (switchover limpio) \\
+5. Verificar & \cod{probar\_puertos.sh} desde n1 y n2; \cod{verificar.py --esperar} & 18/18 puertos OK desde ambos; 3 nodos con datos idénticos \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Estado final:
+
+\begin{lstlisting}
+| Member | Host          | Role         | State     | TL | Lag in MB |
+| n1     | 100.73.72.12  | Leader       | running   | 23 |           |
+| n2     | 100.69.167.56 | Sync Standby | streaming | 23 |         0 |
+| n3     | 100.114.31.68 | Replica      | streaming | 23 |         0 |
+
+n1    PRIMARIO     100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+n2    replica      100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+n3    replica      100   1,000,000.00     2485      0  7f639f111779 efa25763e99f
+RESULTADO: OK. 3 nodos con datos identicos, suma = 1,000,000, sin secuencias faltantes, un solo primario.
+\end{lstlisting}
+
+El equipo nuevo recibió una copia completa e idéntica de la base sin intervención manual, y el resto del clúster nunca dejó de aceptar escrituras salvo los 3 s aproximados del switchover planificado. Con esto, la configuración final del clúster es: n1 MacBook Air (macOS, ARM64), n2 Dell Latitude 5420 (Ubuntu 24.04, x86-64) y n3 MacBook Pro (macOS, ARM64).
+
+\section{Incidentes encontrados durante la implementación}
+
+\begin{longtable}{@{}L{0.4cm}L{4.3cm}L{4.4cm}L{5.2cm}@{}}
+\caption{Incidentes encontrados y solución aplicada.}\\
+\toprule
+\textbf{\#} & \textbf{Síntoma} & \textbf{Causa} & \textbf{Solución aplicada} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Síntoma} & \textbf{Causa} & \textbf{Solución aplicada} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\small 1 & \small El build de la imagen falla con \cod{403 Forbidden} en los repositorios de Debian & \small El proxy de una red bloqueaba \cod{deb.debian.org} por HTTP & \small Cambiar de red; el caso quedó documentado en la guía de problemas \\
+\small 2 & \small Tres servicios del laboratorio fallan con \cod{image already exists} & \small Compose construía la misma imagen 3 veces en paralelo & \small Construir una vez antes de levantar (\cod{lab.sh}) \\
+\small 3 & \small macOS reporta los puertos 5000 y 7000 ocupados & \small El \textbf{Receptor AirPlay} (\cod{ControlCenter}) escucha en ellos & \small Desactivarlo; el instalador ahora lo detecta y lo explica \\
+\small 4 & \small \cod{pip} corta la descarga de \cod{psycopg} (\cod{Read timed out}) & \small Red lenta: pip corta a los 15 s por defecto & \small \cod{--timeout 120 --retries 10} en el instalador \\
+\small 5 & \small Riesgo de que etcd no forme quórum & \small Las IP de n2 y n3 quedaron invertidas en el \cod{.env} de una Mac & \small Corrección del \cod{.env}; la guía exige comparar \cod{grep \_IP .env} en los 3 \\
+\small 6 & \small El tercer equipo tenía OrbStack en lugar de Docker Desktop & \small El instalador habría instalado Docker Desktop encima & \small El instalador detecta y usa OrbStack \\
+\small 7 & \small \cod{switchover} responde \cod{412 candidate name does not match with sync\_standby} & \small En modo síncrono Patroni solo promueve a la réplica síncrona & \small Switchover sin \cod{--candidate}; el panel encadena pasos \\
+\small 8 & \small Aparente diferencia de 1 fila entre el CSV y la base & \small El generador lanzado en segundo plano ignoraba SIGINT y seguía escribiendo & \small Detenerlo con SIGTERM (\cod{scripts/carga.sh detener}); la cifra cuadró exacta \\
+\small 9 & \small Un nodo reinstalado no puede unirse a etcd (\cod{cluster ID mismatch}) & \small Un etcd sin datos intenta crear un clúster nuevo & \small \cod{iniciar.sh} retira y vuelve a agregar el miembro y arranca como \cod{existing} \\
+\small 10 & \small Volver a correr \cod{iniciar.sh} recreaba etcd y Patroni & \small El modo de arranque de etcd cambiaba entre ejecuciones & \small El modo se guarda en \cod{.env} \\
+\small 11 & \small La conexión SSE del panel dejaba de actualizar con varias pestañas & \small Límite de 6 conexiones simultáneas por servidor en el navegador & \small Consulta periódica cada segundo \\
+\end{longtable}
+
+\section{Análisis de resultados}
+
+\subsection{Cumplimiento de requerimientos}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Cumplimiento de los requerimientos.}
+\begin{tabularx}{\textwidth}{@{}lL{3.6cm}Yc@{}}
+\toprule
+\textbf{\#} & \textbf{Requerimiento} & \textbf{Evidencia} & \textbf{Cumple} \\
+\midrule
+R1 & $\geq$ 90 cambios/min & 180 cambios/min medidos con un generador, también con un nodo caído (con un generador por equipo, la capacidad de diseño es de 540) & \ok \\
+R2 & Acceso desde $\geq$ 2 equipos y siempre un mirror & Clientes en los 3 equipos; una réplica síncrona en todo momento; cada \cod{COMMIT} en 2 equipos & \ok \\
+R3 & Un equipo se apaga & Probado con el primario y con réplicas, de forma brusca, limpia, por red y por reinstalación & \ok \\
+R4 & Integridad y funcionalidad continúan & Escrituras restablecidas en 3--26 s; suma constante; 0 faltantes; 0 duplicados; cliente = base & \ok \\
+R5 & Re-sincronización al volver & \cod{pg\_rewind} (primario viejo), WAL (réplica), copia base automática (reinstalación y reemplazo de equipo) & \ok \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{RTO}
+
+\begin{itemize}
+  \item \textbf{Caídas limpias o planificadas: unos 3--5 s.} Patroni libera la llave de líder al detenerse, así que la réplica síncrona se promueve en el siguiente ciclo.
+  \item \textbf{Apagado brusco: unos 26 s.} El TTL de 20 s cuenta desde la última renovación de la llave, más hasta un \cod{loop\_wait} (5 s) para detectarlo y el tiempo de promoción.
+  \item \textbf{Bajar el RTO} es posible reduciendo \cod{ttl}, por ejemplo a 10 s con \cod{loop\_wait} de 3 s. A cambio aumenta el riesgo de failovers innecesarios por cortes breves de red, que es especialmente relevante entre redes distintas por Internet.
+\end{itemize}
+
+\subsection{RPO}
+
+RPO = 0 en todas las pruebas. La replicación síncrona hizo que cada transacción confirmada existiera en dos nodos, y el modo síncrono de Patroni solo promovió réplicas que la tenían. Las transacciones ``en vuelo'' durante la caída nunca fueron confirmadas al cliente: este las reintentó y quedaron guardadas exactamente una vez.
+
+\subsection{Disponibilidad ante partición}
+
+La prueba P4 muestra el comportamiento CP (consistencia y tolerancia a particiones) esperado. El cliente que estaba en el lado aislado esperó 56,9 s hasta la reconexión: es el precio de no permitir escrituras sin quórum. Los clientes del lado con mayoría continuaron a los 22 s.
+
+\subsection{Carga durante las fallas}
+
+La ventana móvil de 60 s se mantuvo por encima de 90 cambios por minuto. Tras cada pausa, el generador ejecuta las transacciones atrasadas y produce un pico visible en la gráfica, de hasta unos 1,800 cambios por minuto durante algunos segundos, que compensa el tiempo sin escrituras.
+
+\section{Limitaciones y trabajo futuro}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Limitaciones y mejoras propuestas.}
+\begin{tabularx}{\textwidth}{@{}L{3.8cm}YL{4.2cm}@{}}
+\toprule
+\textbf{Limitación} & \textbf{Impacto} & \textbf{Mejora propuesta} \\
+\midrule
+Con 3 nodos se tolera una sola falla & Con 2 caídas el nodo restante queda en solo lectura (correcto, pero sin servicio de escritura) & 5 nodos para tolerar 2 fallas \\
+Sin TLS entre componentes & El tráfico va cifrado por WireGuard (Tailscale), pero PostgreSQL, etcd y la API de Patroni no usan TLS propio & Certificados para PostgreSQL, etcd y la API REST \\
+Sin respaldos externos ni PITR & Un error lógico (\cod{DELETE} accidental) se replica a todos los nodos & pgBackRest con WAL archiving a almacenamiento externo \\
+Sin \emph{watchdog} de hardware & Un primario ``congelado'' (no caído) depende solo del TTL & \cod{/dev/watchdog} (softdog) en Linux \\
+Panel sin autenticación & Cualquiera en la red Tailscale puede cambiar el primario & Autenticación o \cod{--solo-lectura} en paneles compartidos \\
+RTO de unos 26 s ante caída brusca & Pausa perceptible de escrituras & Ajustar \cod{ttl}/\cod{loop\_wait} según la estabilidad de la red \\
+Monitoreo propio & Sin alertas ni historial persistente & Prometheus + Grafana + Alertmanager \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Conclusiones}
+
+\begin{enumerate}
+  \item \textbf{La solución cumple los cinco requerimientos.} Con PostgreSQL 16, Patroni y etcd en tres equipos, la base de datos siguió aceptando escrituras ante la pérdida de cualquier equipo, por apagado brusco, detención limpia, partición de red o reinstalación completa, y cada equipo se re-sincronizó sin intervención al regresar.
+  \item \textbf{La integridad se demostró, no solo se asumió.} Los invariantes de negocio (suma constante de saldos), la continuidad de secuencias, los hashes idénticos entre nodos y la conciliación exacta entre lo que el cliente recibió como confirmado y lo que hay en la base (1,301 = 1,301) prueban RPO = 0 y la ausencia de duplicados.
+  \item \textbf{El quórum es la pieza que hace seguro el failover automático.} En la partición, el primario aislado se degradó a los 11 s, antes de que el lado con mayoría promoviera otro a los 22 s, así que nunca existieron dos primarios.
+  \item \textbf{La replicación síncrona y la idempotencia del cliente se complementan.} La primera garantiza que lo confirmado no se pierda; la segunda, que lo no confirmado pueda reintentarse sin duplicarse.
+  \item \textbf{Los contenedores permitieron un clúster heterogéneo.} macOS con ARM64 y Linux con x86-64 replicaron en ambas direcciones gracias a una imagen única y a la colación \cod{C.UTF-8}.
+  \item \textbf{La automatización es parte de la disponibilidad.} El instalador, la reincorporación automática de nodos (24 s tras borrar todos los datos de un nodo) y el panel reducen el tiempo y el error humano en la operación diaria y en la recuperación.
+\end{enumerate}
+
+\begin{thebibliography}{9}
+\addcontentsline{toc}{section}{Referencias}
+\bibitem{pgdocs} PostgreSQL Global Development Group. \emph{PostgreSQL 16 Documentation}. Capítulos 27 (\emph{High Availability, Load Balancing, and Replication}), 30 (\emph{Reliability and the Write-Ahead Log}) y la referencia de \cod{pg\_rewind}. \url{https://www.postgresql.org/docs/16/}
+\bibitem{patroni} Patroni. \emph{Patroni Documentation}: modo síncrono, parámetros del DCS, API REST. \url{https://patroni.readthedocs.io/}
+\bibitem{etcd} etcd Authors. \emph{etcd Documentation v3.5}: clustering, runtime reconfiguration, tuning. \url{https://etcd.io/docs/v3.5/}
+\bibitem{raft} Ongaro, D. y Ousterhout, J. (2014). \emph{In Search of an Understandable Consensus Algorithm (Raft)}. USENIX Annual Technical Conference.
+\bibitem{cap} Brewer, E. (2000). \emph{Towards Robust Distributed Systems}. ACM Symposium on Principles of Distributed Computing (PODC).
+\bibitem{haproxy} HAProxy Technologies. \emph{HAProxy 3.0 Configuration Manual}. \url{https://docs.haproxy.org/3.0/configuration.html}
+\bibitem{libpq} PostgreSQL Global Development Group. \emph{libpq: Connection Strings}. \url{https://www.postgresql.org/docs/16/libpq-connect.html}
+\bibitem{tailscale} Tailscale Inc. \emph{Tailscale Documentation}. \url{https://tailscale.com/kb}
+\end{thebibliography}
+
+\section*{Anexos}
+\addcontentsline{toc}{section}{Anexos}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Anexos disponibles en el repositorio.}
+\begin{tabularx}{\textwidth}{@{}L{6.6cm}Y@{}}
+\toprule
+\textbf{Anexo} & \textbf{Archivo} \\
+\midrule
+A. Manual técnico de instalación y operación & \cod{MANUAL.md}, \cod{MANUAL.pdf} \\
+B. Plan de implementación detallado & \cod{PLAN\_ALTA\_DISPONIBILIDAD.md}, \cod{.pdf} \\
+C. Guía de puesta en marcha y pruebas & \cod{GUIA\_PENDIENTES.md}, \cod{.pdf} \\
+D. Casos límite analizados & \cod{EDGE\_CASES.md} \\
+E. Configuración completa & \cod{docker-compose.yml}, \cod{patroni/}, \cod{haproxy/}, \cod{sql/esquema.sql} \\
+F. Programas & \cod{app/generador.py}, \cod{app/verificar.py}, \cod{app/monitor.py}, \cod{app/panel.py} \\
+G. Evidencias & Logs de Patroni, CSV de generadores y verificaciones (carpeta \cod{evidencias/} del nodo n1) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}
